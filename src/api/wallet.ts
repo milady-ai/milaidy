@@ -278,7 +278,7 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
 export function validateEvmPrivateKey(key: string): KeyValidationResult {
   const cleaned = key.startsWith("0x") ? key.slice(2) : key;
   if (cleaned.length !== 64) return { valid: false, chain: "evm", address: null, error: "Must be 64 hex characters" };
-  if (!HEX_RE.test(cleaned)) return { valid: false, chain: "evm", address: null, error: "Invalid hex characters" };
+  if (!HEX_RE.test(cleaned)) return { valid: false, chain: "evm", address: null, error: "invalid hex characters" };
   try {
     return { valid: true, chain: "evm", address: deriveEvmAddress(key), error: null };
   } catch (err) {
@@ -303,6 +303,11 @@ export function validatePrivateKey(key: string): KeyValidationResult {
   const trimmed = key.trim();
   if (trimmed.startsWith("0x") || (trimmed.length === 64 && HEX_RE.test(trimmed))) return validateEvmPrivateKey(trimmed);
   return validateSolanaPrivateKey(trimmed);
+}
+
+export function maskSecret(value: string): string {
+  if (!value || value.length <= 8) return "****";
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
 // Key generation

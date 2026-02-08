@@ -527,12 +527,8 @@ async function readJsonBody<T = Record<string, unknown>>(
 }
 
 function json(res: http.ServerResponse, data: unknown, status = 200): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  });
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(data));
 }
 
@@ -580,6 +576,120 @@ interface RequestContext {
   onRestart: (() => Promise<AgentRuntime | null>) | null;
 }
 
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+const APP_ORIGIN_RE = /^(capacitor|capacitor-electron|app):\/\/(localhost|-)?$/i;
+
+function resolveCorsOrigin(origin?: string): string | null {
+  if (!origin) return null;
+  const trimmed = origin.trim();
+  if (!trimmed) return null;
+
+  // Explicit allowlist via env (comma-separated)
+  const extra = process.env.MILAIDY_ALLOWED_ORIGINS;
+  if (extra) {
+    const allow = extra.split(",").map((v) => v.trim()).filter(Boolean);
+    if (allow.includes(trimmed)) return trimmed;
+  }
+
+  if (LOCAL_ORIGIN_RE.test(trimmed)) return trimmed;
+  if (APP_ORIGIN_RE.test(trimmed)) return trimmed;
+  if (trimmed === "null" && process.env.MILAIDY_ALLOW_NULL_ORIGIN === "1") return "null";
+  return null;
+}
+
+function applyCors(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+  const allowed = resolveCorsOrigin(origin);
+
+  if (origin && !allowed) return false;
+
+  if (allowed) {
+    res.setHeader("Access-Control-Allow-Origin", allowed);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Milaidy-Token, X-Api-Key");
+  }
+
+  return true;
+}
+
+const PAIRING_TTL_MS = 10 * 60 * 1000;
+const PAIRING_WINDOW_MS = 10 * 60 * 1000;
+const PAIRING_MAX_ATTEMPTS = 5;
+const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+let pairingCode: string | null = null;
+let pairingExpiresAt = 0;
+const pairingAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function pairingEnabled(): boolean {
+  return Boolean(process.env.MILAIDY_API_TOKEN?.trim()) &&
+    process.env.MILAIDY_PAIRING_DISABLED !== "1";
+}
+
+function normalizePairingCode(code: string): string {
+  return code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+}
+
+function generatePairingCode(): string {
+  const bytes = crypto.randomBytes(8);
+  let raw = "";
+  for (let i = 0; i < bytes.length; i++) {
+    raw += PAIRING_ALPHABET[bytes[i] % PAIRING_ALPHABET.length];
+  }
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+}
+
+function ensurePairingCode(): string | null {
+  if (!pairingEnabled()) return null;
+  const now = Date.now();
+  if (!pairingCode || now > pairingExpiresAt) {
+    pairingCode = generatePairingCode();
+    pairingExpiresAt = now + PAIRING_TTL_MS;
+    logger.warn(`[milaidy-api] Pairing code: ${pairingCode} (valid for 10 minutes)`);
+  }
+  return pairingCode;
+}
+
+function rateLimitPairing(ip: string | null): boolean {
+  const key = ip ?? "unknown";
+  const now = Date.now();
+  const current = pairingAttempts.get(key);
+  if (!current || now > current.resetAt) {
+    pairingAttempts.set(key, { count: 1, resetAt: now + PAIRING_WINDOW_MS });
+    return true;
+  }
+  if (current.count >= PAIRING_MAX_ATTEMPTS) return false;
+  current.count += 1;
+  return true;
+}
+
+function extractAuthToken(req: http.IncomingMessage): string | null {
+  const auth = typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+  if (auth) {
+    const match = /^Bearer\s+(.+)$/i.exec(auth);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  const header =
+    (typeof req.headers["x-milaidy-token"] === "string" && req.headers["x-milaidy-token"]) ||
+    (typeof req.headers["x-api-key"] === "string" && req.headers["x-api-key"]);
+  if (typeof header === "string" && header.trim()) return header.trim();
+
+  return null;
+}
+
+function isAuthorized(req: http.IncomingMessage): boolean {
+  const expected = process.env.MILAIDY_API_TOKEN?.trim();
+  if (!expected) return true;
+  const provided = extractAuthToken(req);
+  if (!provided) return false;
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -589,15 +699,72 @@ async function handleRequest(
   const method = req.method ?? "GET";
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const pathname = url.pathname;
+  const isAuthEndpoint = pathname.startsWith("/api/auth/");
+
+  if (!applyCors(req, res)) {
+    json(res, { error: "Origin not allowed" }, 403);
+    return;
+  }
+
+  if (method !== "OPTIONS" && !isAuthEndpoint && !isAuthorized(req)) {
+    json(res, { error: "Unauthorized" }, 401);
+    return;
+  }
 
   // CORS preflight
   if (method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    });
+    res.statusCode = 204;
     res.end();
+    return;
+  }
+
+  // ── GET /api/auth/status ───────────────────────────────────────────────
+  if (method === "GET" && pathname === "/api/auth/status") {
+    const required = Boolean(process.env.MILAIDY_API_TOKEN?.trim());
+    const enabled = pairingEnabled();
+    if (enabled) ensurePairingCode();
+    json(res, { required, pairingEnabled: enabled, expiresAt: enabled ? pairingExpiresAt : null });
+    return;
+  }
+
+  // ── POST /api/auth/pair ────────────────────────────────────────────────
+  if (method === "POST" && pathname === "/api/auth/pair") {
+    const body = await readJsonBody<{ code?: string }>(req, res);
+    if (!body) return;
+
+    const token = process.env.MILAIDY_API_TOKEN?.trim();
+    if (!token) {
+      error(res, "Pairing not enabled", 400);
+      return;
+    }
+    if (!pairingEnabled()) {
+      error(res, "Pairing disabled", 403);
+      return;
+    }
+    if (!rateLimitPairing(req.socket.remoteAddress ?? null)) {
+      error(res, "Too many attempts. Try again later.", 429);
+      return;
+    }
+
+    const provided = normalizePairingCode(body.code ?? "");
+    const current = ensurePairingCode();
+    if (!current || Date.now() > pairingExpiresAt) {
+      ensurePairingCode();
+      error(res, "Pairing code expired. Check server logs for a new code.", 410);
+      return;
+    }
+
+    const expected = normalizePairingCode(current);
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(provided, "utf8");
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      error(res, "Invalid pairing code", 403);
+      return;
+    }
+
+    pairingCode = null;
+    pairingExpiresAt = 0;
+    json(res, { token });
     return;
   }
 
@@ -1664,6 +1831,7 @@ export async function startApiServer(opts?: {
   onRestart?: () => Promise<AgentRuntime | null>;
 }): Promise<{ port: number; close: () => Promise<void>; updateRuntime: (rt: AgentRuntime) => void }> {
   const port = opts?.port ?? 2138;
+  const host = (process.env.MILAIDY_API_BIND ?? "127.0.0.1").trim() || "127.0.0.1";
 
   let config: MilaidyConfig;
   try {
@@ -1778,11 +1946,12 @@ export async function startApiServer(opts?: {
   };
 
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       const addr = server.address();
       const actualPort = typeof addr === "object" && addr ? addr.port : port;
-      addLog("info", `API server listening on http://localhost:${actualPort}`);
-      logger.info(`[milaidy-api] Listening on http://localhost:${actualPort}`);
+      const displayHost = typeof addr === "object" && addr ? addr.address : host;
+      addLog("info", `API server listening on http://${displayHost}:${actualPort}`);
+      logger.info(`[milaidy-api] Listening on http://${displayHost}:${actualPort}`);
       resolve({
         port: actualPort,
         close: () => new Promise<void>((r) => { server.close(() => r()); }),

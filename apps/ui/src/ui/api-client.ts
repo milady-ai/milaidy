@@ -150,13 +150,19 @@ export type WsEventHandler = (data: Record<string, unknown>) => void;
 export class MilaidyClient {
   private _baseUrl: string;
   private _explicitBase: boolean;
+  private _token: string | null;
   private ws: WebSocket | null = null;
   private wsHandlers = new Map<string, Set<WsEventHandler>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = 500;
 
-  constructor(baseUrl?: string) {
+  constructor(baseUrl?: string, token?: string) {
     this._explicitBase = baseUrl != null;
+    const stored =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem("milaidy_api_token")
+        : null;
+    this._token = token?.trim() || stored || null;
     // Priority: explicit arg > Capacitor/Electron injected global > same origin (Vite proxy)
     const global = typeof window !== "undefined"
       ? (window as Record<string, unknown>).__MILAIDY_API_BASE__
@@ -180,6 +186,29 @@ export class MilaidyClient {
     return this._baseUrl;
   }
 
+  private get apiToken(): string | null {
+    if (this._token) return this._token;
+    if (typeof window === "undefined") return null;
+    const injected = (window as Record<string, unknown>).__MILAIDY_API_TOKEN__;
+    if (typeof injected === "string" && injected.trim()) return injected.trim();
+    return null;
+  }
+
+  hasToken(): boolean {
+    return Boolean(this.apiToken);
+  }
+
+  setToken(token: string | null): void {
+    this._token = token?.trim() || null;
+    if (typeof window !== "undefined") {
+      if (this._token) {
+        window.sessionStorage.setItem("milaidy_api_token", this._token);
+      } else {
+        window.sessionStorage.removeItem("milaidy_api_token");
+      }
+    }
+  }
+
   /** True when we have a usable HTTP(S) API endpoint. */
   get apiAvailable(): boolean {
     if (this.baseUrl) return true;
@@ -196,16 +225,28 @@ export class MilaidyClient {
     if (!this.apiAvailable) {
       throw new Error("API not available (no HTTP origin)");
     }
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const makeRequest = (token: string | null) => fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
     });
+
+    const token = this.apiToken;
+    let res = await makeRequest(token);
+    if (res.status === 401 && !token) {
+      const retryToken = this.apiToken;
+      if (retryToken) {
+        res = await makeRequest(retryToken);
+      }
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText })) as Record<string, string>;
-      throw new Error(body.error ?? `HTTP ${res.status}`);
+      const err = new Error(body.error ?? `HTTP ${res.status}`);
+      (err as Error & { status?: number }).status = res.status;
+      throw err;
     }
     return res.json() as Promise<T>;
   }
@@ -216,6 +257,18 @@ export class MilaidyClient {
 
   async getOnboardingStatus(): Promise<{ complete: boolean }> {
     return this.fetch("/api/onboarding/status");
+  }
+
+  async getAuthStatus(): Promise<{ required: boolean; pairingEnabled: boolean; expiresAt: number | null }> {
+    return this.fetch("/api/auth/status");
+  }
+
+  async pair(code: string): Promise<{ token: string }> {
+    const res = await this.fetch<{ token: string }>("/api/auth/pair", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    return res;
   }
 
   async getOnboardingOptions(): Promise<OnboardingOptions> {

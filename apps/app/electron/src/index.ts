@@ -56,17 +56,18 @@ if (electronIsDev) {
   agentManager.setMainWindow(mainWindow);
   agentManager.start().then((status) => {
     if (status.port && !mainWindow.isDestroyed()) {
+      const apiToken = process.env.MILAIDY_API_TOKEN;
+      const tokenSnippet = apiToken ? `window.__MILAIDY_API_TOKEN__ = ${JSON.stringify(apiToken)}` : "";
+      const baseSnippet = `window.__MILAIDY_API_BASE__ = "http://localhost:${status.port}"`;
+      const inject = `${baseSnippet};${tokenSnippet}`;
       mainWindow.webContents.on('did-finish-load', () => {
         if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.executeJavaScript(
-            `window.__MILAIDY_API_BASE__ = "http://localhost:${status.port}"`
-          );
+          mainWindow.webContents.executeJavaScript(inject);
         }
       });
       // Also inject immediately if page is already loaded
-      mainWindow.webContents.executeJavaScript(
-        `window.__MILAIDY_API_BASE__ = "http://localhost:${status.port}"`
-      ).catch(() => { /* page not ready yet, did-finish-load will handle it */ });
+      mainWindow.webContents.executeJavaScript(inject)
+        .catch(() => { /* page not ready yet, did-finish-load will handle it */ });
     }
   }).catch((err) => {
     console.error('[Milaidy] Agent startup failed:', err);

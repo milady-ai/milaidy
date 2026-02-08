@@ -43,6 +43,12 @@ export class MilaidyApp extends LitElement {
   @state() pluginSettingsOpen: Set<string> = new Set();
   @state() skills: SkillInfo[] = [];
   @state() logs: LogEntry[] = [];
+  @state() authRequired = false;
+  @state() pairingEnabled = false;
+  @state() pairingExpiresAt: number | null = null;
+  @state() pairingCodeInput = "";
+  @state() pairingError: string | null = null;
+  @state() pairingBusy = false;
 
   // Chrome extension state
   @state() extensionStatus: ExtensionStatus | null = null;
@@ -86,6 +92,50 @@ export class MilaidyApp extends LitElement {
       max-width: 900px;
       margin: 0 auto;
       padding: 0 20px;
+    }
+
+    .pairing-shell {
+      max-width: 560px;
+      margin: 60px auto;
+      padding: 24px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 10px;
+    }
+
+    .pairing-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-strong);
+    }
+
+    .pairing-sub {
+      color: var(--muted);
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+
+    .pairing-input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-muted);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .pairing-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .pairing-error {
+      margin-top: 10px;
+      color: #c94f4f;
+      font-size: 13px;
     }
 
     /* Header */
@@ -949,6 +999,15 @@ export class MilaidyApp extends LitElement {
     let serverReady = false;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
+        const auth = await client.getAuthStatus();
+        if (auth.required && !client.hasToken()) {
+          this.authRequired = true;
+          this.pairingEnabled = auth.pairingEnabled;
+          this.pairingExpiresAt = auth.expiresAt;
+          serverReady = true;
+          break;
+        }
+
         const { complete } = await client.getOnboardingStatus();
         this.onboardingComplete = complete;
         if (!complete) {
@@ -974,6 +1033,10 @@ export class MilaidyApp extends LitElement {
       console.warn("[milaidy] Could not reach server after retries — continuing in offline mode.");
     }
     this.onboardingLoading = false;
+
+    if (this.authRequired) {
+      return;
+    }
 
     // Restore persisted chat messages
     this.loadChatMessages();
@@ -1286,6 +1349,10 @@ export class MilaidyApp extends LitElement {
       return html`<div class="app-shell"><div class="empty-state">Loading...</div></div>`;
     }
 
+    if (this.authRequired) {
+      return this.renderPairing();
+    }
+
     if (!this.onboardingComplete) {
       return this.renderOnboarding();
     }
@@ -1296,6 +1363,62 @@ export class MilaidyApp extends LitElement {
         ${this.renderNav()}
         <main>${this.renderView()}</main>
         <footer>milaidy</footer>
+      </div>
+    `;
+  }
+
+  private async handlePairingSubmit(): Promise<void> {
+    const code = this.pairingCodeInput.trim();
+    if (!code) {
+      this.pairingError = "Enter the pairing code from the server logs.";
+      return;
+    }
+    this.pairingError = null;
+    this.pairingBusy = true;
+    try {
+      const { token } = await client.pair(code);
+      client.setToken(token);
+      window.location.reload();
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 410) {
+        this.pairingError = "Pairing code expired. Check logs for a new code.";
+      } else if (status === 429) {
+        this.pairingError = "Too many attempts. Try again later.";
+      } else {
+        this.pairingError = "Pairing failed. Check the code and try again.";
+      }
+    } finally {
+      this.pairingBusy = false;
+    }
+  }
+
+  private renderPairing() {
+    const expires =
+      this.pairingExpiresAt ? Math.max(0, Math.round((this.pairingExpiresAt - Date.now()) / 60000)) : null;
+    return html`
+      <div class="app-shell">
+        <div class="pairing-shell">
+          <div class="pairing-title">Pair This UI</div>
+          <div class="pairing-sub">
+            ${this.pairingEnabled
+              ? html`Enter the pairing code printed in the Milaidy server logs.${expires != null
+                ? html` Code expires in about ${expires} minute${expires === 1 ? "" : "s"}.` : ""}`
+              : html`Pairing is disabled. Set <code>MILAIDY_PAIRING_DISABLED</code> to <code>0</code> to enable pairing.`}
+          </div>
+          <input
+            class="pairing-input"
+            .value=${this.pairingCodeInput}
+            placeholder="XXXX-XXXX"
+            @input=${(e: Event) => { this.pairingCodeInput = (e.target as HTMLInputElement).value; }}
+          />
+          <div class="pairing-actions">
+            <button class="lifecycle-btn" @click=${this.handlePairingSubmit} ?disabled=${this.pairingBusy}>
+              ${this.pairingBusy ? "Pairing..." : "Pair"}
+            </button>
+          </div>
+          ${this.pairingError ? html`<div class="pairing-error">${this.pairingError}</div>` : null}
+        </div>
       </div>
     `;
   }
