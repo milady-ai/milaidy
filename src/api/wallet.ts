@@ -373,7 +373,7 @@ export function validateEvmPrivateKey(key: string): KeyValidationResult {
       valid: false,
       chain: "evm",
       address: null,
-      error: "Invalid hex characters",
+      error: "invalid hex characters",
     };
   try {
     return {
