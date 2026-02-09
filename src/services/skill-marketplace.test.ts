@@ -129,6 +129,17 @@ describe("searchSkillsMarketplace", () => {
     expect(reqInit.headers.Authorization).toBe("Bearer sk-test-key");
   });
 
+  it("passes an AbortSignal timeout to fetch for request cancellation", async () => {
+    process.env.SKILLSMP_API_KEY = "sk-test";
+    const mockFetch = vi.fn().mockResolvedValue(fakeResponse({ results: [] }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await searchSkillsMarketplace("test");
+
+    const reqInit = mockFetch.mock.calls[0][1];
+    expect(reqInit.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("uses /search endpoint for keyword search", async () => {
     process.env.SKILLSMP_API_KEY = "sk-test";
     const mockFetch = vi.fn().mockResolvedValue(fakeResponse({ results: [] }));
@@ -440,6 +451,18 @@ describe("searchSkillsMarketplace", () => {
 
     await expect(searchSkillsMarketplace("test")).rejects.toThrow("500");
   });
+
+  it("throws on network failure before receiving a response", async () => {
+    process.env.SKILLSMP_API_KEY = "sk-test";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    );
+
+    await expect(searchSkillsMarketplace("test")).rejects.toThrow(
+      "ECONNREFUSED",
+    );
+  });
 });
 
 // ============================================================================
@@ -451,6 +474,16 @@ describe("installMarketplaceSkill", () => {
     await expect(installMarketplaceSkill(tmpDir, {})).rejects.toThrow(
       "Install requires a repository or GitHub URL",
     );
+  });
+
+  it("rejects git ref with invalid characters to prevent option injection", async () => {
+    await expect(
+      installMarketplaceSkill(tmpDir, {
+        githubUrl:
+          "https://github.com/owner/repo/tree/--upload-pack=evil/skills/test",
+        name: "test-skill",
+      }),
+    ).rejects.toThrow("Invalid git ref");
   });
 
   it("throws when skill is already installed at the target path", async () => {
