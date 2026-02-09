@@ -141,7 +141,7 @@
     "@elizaos/plugin-vision": "next",
     "@elizaos/plugin-whatsapp": "next",
     "@elizaos/plugin-xai": "next",
-    "@elizaos/skills": "next",
+    "@elizaos/skills": "^2.0.0-alpha.3",
     "@elizaos/tui": "next",
     "@homunculuslabs/plugin-zai": "2.0.0-alpha.1",
     "@mariozechner/pi-ai": "^0.52.9",

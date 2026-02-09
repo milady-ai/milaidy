@@ -1063,11 +1063,51 @@ export function ConfigView() {
 
             {/* Inline settings for selected EVM provider */}
             {selectedEvmRpc === "elizacloud" && (
-              <div className="mt-3 text-[11px] text-[var(--muted)]">
-                Managed RPC — no API key needed.{" "}
-                {cloudConnected
-                  ? <span className="text-[var(--ok,#16a34a)]">Cloud connected.</span>
-                  : <span>Connect via Eliza Cloud in Model Provider above.</span>}
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] text-[var(--muted)]">Managed RPC — no API key needed.</div>
+                  <span
+                    className="text-[11px] px-2 py-[3px] border"
+                    style={{
+                      borderColor: cloudConnected ? "#2d8a4e" : "var(--border)",
+                      color: cloudConnected ? "#2d8a4e" : "var(--muted)",
+                    }}
+                  >
+                    {cloudConnected ? "Connected" : "Not Connected"}
+                  </span>
+                </div>
+                {cloudConnected ? (
+                  <div className="flex items-center gap-3 text-xs">
+                    {cloudUserId && (
+                      <span className="text-[var(--muted)]">
+                        User: <code className="font-[var(--mono)] text-[11px]">{cloudUserId}</code>
+                      </span>
+                    )}
+                    <button
+                      className="btn text-xs py-[4px] px-3 !mt-0"
+                      onClick={() => void handleCloudDisconnect()}
+                      disabled={cloudDisconnecting}
+                    >
+                      {cloudDisconnecting ? "Disconnecting..." : "Disconnect"}
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    {cloudLoginError && (
+                      <div className="text-xs text-[var(--danger,#e74c3c)] mb-2">{cloudLoginError}</div>
+                    )}
+                    {cloudLoginBusy ? (
+                      <div className="text-xs text-[var(--muted)]">Waiting for browser authentication...</div>
+                    ) : (
+                      <button
+                        className="btn text-xs py-[4px] px-3 font-bold !mt-0"
+                        onClick={() => void handleCloudLogin()}
+                      >
+                        Log in to ELIZA Cloud
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {selectedEvmRpc === "alchemy" && (
@@ -1134,11 +1174,51 @@ export function ConfigView() {
 
             {/* Inline settings for selected Solana provider */}
             {selectedSolanaRpc === "elizacloud" && (
-              <div className="mt-3 text-[11px] text-[var(--muted)]">
-                Managed RPC — no API key needed.{" "}
-                {cloudConnected
-                  ? <span className="text-[var(--ok,#16a34a)]">Cloud connected.</span>
-                  : <span>Connect via Eliza Cloud in Model Provider above.</span>}
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] text-[var(--muted)]">Managed RPC — no API key needed.</div>
+                  <span
+                    className="text-[11px] px-2 py-[3px] border"
+                    style={{
+                      borderColor: cloudConnected ? "#2d8a4e" : "var(--border)",
+                      color: cloudConnected ? "#2d8a4e" : "var(--muted)",
+                    }}
+                  >
+                    {cloudConnected ? "Connected" : "Not Connected"}
+                  </span>
+                </div>
+                {cloudConnected ? (
+                  <div className="flex items-center gap-3 text-xs">
+                    {cloudUserId && (
+                      <span className="text-[var(--muted)]">
+                        User: <code className="font-[var(--mono)] text-[11px]">{cloudUserId}</code>
+                      </span>
+                    )}
+                    <button
+                      className="btn text-xs py-[4px] px-3 !mt-0"
+                      onClick={() => void handleCloudDisconnect()}
+                      disabled={cloudDisconnecting}
+                    >
+                      {cloudDisconnecting ? "Disconnecting..." : "Disconnect"}
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    {cloudLoginError && (
+                      <div className="text-xs text-[var(--danger,#e74c3c)] mb-2">{cloudLoginError}</div>
+                    )}
+                    {cloudLoginBusy ? (
+                      <div className="text-xs text-[var(--muted)]">Waiting for browser authentication...</div>
+                    ) : (
+                      <button
+                        className="btn text-xs py-[4px] px-3 font-bold !mt-0"
+                        onClick={() => void handleCloudLogin()}
+                      >
+                        Log in to ELIZA Cloud
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {selectedSolanaRpc === "helius" && (

@@ -21,8 +21,6 @@
       "*": ["./*"],
       "@elizaos/core": ["../typescript/src/index.node.ts"],
       "@elizaos/core/*": ["../typescript/src/*"],
-      "@elizaos/skills": ["../skills/src/index.ts"],
-      "@elizaos/skills/*": ["../skills/src/*"]
     }
   },
   "include": ["src/**/*"],

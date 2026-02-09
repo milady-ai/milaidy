@@ -1,0 +1,10 @@
+/**
+ * Ambient type declarations for optional dependencies that may not be
+ * installed locally.  The runtime code guards every import with try/catch,
+ * so these declarations exist solely to satisfy the type-checker.
+ */
+
+declare module "@elizaos/skills" {
+  /** Returns the absolute path to the bundled skills directory. */
+  export function getSkillsDir(): string;
+}
