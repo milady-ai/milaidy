@@ -8,11 +8,13 @@ async function openPalette(page: import("@playwright/test").Page): Promise<void>
 }
 
 test.describe("Command palette", () => {
-  test("opens via header button and executes navigation command", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await mockApi(page, { onboardingComplete: true, agentState: "running" });
     await page.goto("/chat");
     await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
+  });
 
+  test("opens via header button and executes navigation command", async ({ page }) => {
     await openPalette(page);
     await page.getByRole("button", { name: "Open Workbench" }).click();
 
@@ -21,10 +23,6 @@ test.describe("Command palette", () => {
   });
 
   test("supports keyboard execution from query (Enter)", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-    await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
-
     await openPalette(page);
     await page.getByPlaceholder("Type a command...").fill("open logs");
     await page.keyboard.press("Enter");
@@ -34,21 +32,13 @@ test.describe("Command palette", () => {
   });
 
   test("closes palette with Escape key", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-    await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
-
     await openPalette(page);
     await page.keyboard.press("Escape");
 
-    await expect(page.getByPlaceholder("Type a command...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByPlaceholder("Type a command...")).not.toBeVisible();
   });
 
   test("filters command list when typing a query", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-    await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
-
     await openPalette(page);
 
     // Before typing, multiple commands should be visible
@@ -64,10 +54,6 @@ test.describe("Command palette", () => {
   });
 
   test("navigates to plugins page via palette", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-    await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
-
     await openPalette(page);
     await page.getByPlaceholder("Type a command...").fill("open plugins");
     await page.keyboard.press("Enter");
@@ -76,10 +62,6 @@ test.describe("Command palette", () => {
   });
 
   test("navigates to config page via palette", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-    await expect(page.getByPlaceholder("Type a message...")).toBeVisible();
-
     await openPalette(page);
     await page.getByPlaceholder("Type a command...").fill("open config");
     await page.keyboard.press("Enter");

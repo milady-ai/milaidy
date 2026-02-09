@@ -2,10 +2,12 @@ import { expect, test } from "@playwright/test";
 import { mockApi } from "./helpers";
 
 test.describe("Share ingest", () => {
-  test("ingests native share payload into chat draft", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await mockApi(page, { onboardingComplete: true, agentState: "running" });
     await page.goto("/chat");
+  });
 
+  test("ingests native share payload into chat draft", async ({ page }) => {
     await page.evaluate(() => {
       document.dispatchEvent(new CustomEvent("milaidy:share-target", {
         detail: {
@@ -25,9 +27,6 @@ test.describe("Share ingest", () => {
   });
 
   test("ingests share with only text and no files", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-
     await page.evaluate(() => {
       document.dispatchEvent(new CustomEvent("milaidy:share-target", {
         detail: {
@@ -44,9 +43,6 @@ test.describe("Share ingest", () => {
   });
 
   test("ingests share with only a URL", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-
     await page.evaluate(() => {
       document.dispatchEvent(new CustomEvent("milaidy:share-target", {
         detail: {
@@ -62,9 +58,6 @@ test.describe("Share ingest", () => {
   });
 
   test("ingests share with multiple files", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-
     await page.evaluate(() => {
       document.dispatchEvent(new CustomEvent("milaidy:share-target", {
         detail: {
@@ -86,9 +79,6 @@ test.describe("Share ingest", () => {
   });
 
   test("share ingest API stores and returns items", async ({ page }) => {
-    await mockApi(page, { onboardingComplete: true, agentState: "running" });
-    await page.goto("/chat");
-
     // POST a share via the API mock
     const postResp = await page.evaluate(async () => {
       const resp = await fetch("/api/ingest/share", {

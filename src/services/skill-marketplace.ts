@@ -422,13 +422,23 @@ export async function searchSkillsMarketplace(
     String(Math.max(1, Math.min(opts?.limit ?? 20, 50))),
   );
 
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json",
-    },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      msg.includes("aborted") || msg.includes("timeout")
+        ? `Skills marketplace request timed out after ${FETCH_TIMEOUT_MS / 1000}s`
+        : `Skills marketplace network error: ${msg}`,
+    );
+  }
 
   const payload = (await resp.json().catch(() => ({}))) as Record<
     string,
