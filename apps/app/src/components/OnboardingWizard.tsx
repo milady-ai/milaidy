@@ -25,7 +25,6 @@ export function OnboardingWizard() {
     onboardingSelectedChains,
     onboardingRpcSelections,
     onboardingRpcKeys,
-    onboardingChannels,
     onboardingRestarting,
     cloudConnected,
     cloudLoginBusy,
@@ -104,15 +103,7 @@ export function OnboardingWizard() {
     setState("onboardingRpcKeys", { ...onboardingRpcKeys, [keyName]: key });
   };
 
-  const handleTelegramTokenChange = (token: string) => {
-    setState("onboardingChannels", {
-      ...onboardingChannels,
-      telegram: {
-        ...(onboardingChannels.telegram ?? {}),
-        botToken: token,
-      },
-    });
-  };
+  /* Telegram token is handled by onboardingTelegramToken state */
 
   const renderStep = (step: OnboardingStep) => {
     switch (step) {
@@ -355,7 +346,7 @@ export function OnboardingWizard() {
           </div>
         );
 
-      case "llmProvider":
+      case "llmProvider": {
         const isDark = onboardingTheme === "dark";
         return (
           <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
@@ -430,6 +421,7 @@ export function OnboardingWizard() {
             )}
           </div>
         );
+      }
 
       case "inventorySetup":
         return (
@@ -501,7 +493,7 @@ export function OnboardingWizard() {
         return (
           <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
             <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[360px] relative text-[15px] text-txt leading-relaxed">
-              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Connect Channels</h2>
+              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Connectors</h2>
               <p className="text-xs text-muted mt-1">Optional — connect your agent to messaging platforms</p>
             </div>
             <div className="flex flex-col gap-3 text-left max-w-[360px] mx-auto">
@@ -550,30 +542,7 @@ export function OnboardingWizard() {
           </div>
         );
 
-      case "channels":
-        return (
-          <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
-            <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[360px] relative text-[15px] text-txt leading-relaxed">
-              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Messaging Channels</h2>
-            </div>
-            <div className="flex flex-col gap-3 text-left max-w-[360px] mx-auto">
-              <div className="px-4 py-3 border border-border bg-card">
-                <div className="font-bold text-sm">Telegram</div>
-                <div className="text-xs text-muted mt-0.5">Connect via @BotFather bot token (optional).</div>
-                <input
-                  type="password"
-                  value={onboardingChannels.telegram?.botToken ?? ""}
-                  onChange={(e) => handleTelegramTokenChange(e.target.value)}
-                  placeholder="Bot token from @BotFather"
-                  className="w-full px-3 py-2 border border-border bg-card text-sm mt-3 focus:border-accent focus:outline-none"
-                />
-              </div>
-            </div>
-            {onboardingRestarting && (
-              <p className="text-sm text-accent mt-4">Restarting agent...</p>
-            )}
-          </div>
-        );
+      /* "channels" step removed — consolidated into "connectors" above */
 
       default:
         return null;
@@ -724,8 +693,6 @@ export function OnboardingWizard() {
         return true;
       case "connectors":
         return true; // fully optional — user can skip
-      case "channels":
-        return true;
       default:
         return false;
     }

@@ -7,7 +7,7 @@
  *   3. Model Provider  (onboarding-style provider selector)
  *   4. Model Provider Settings  (detailed plugin config)
  *   5. Wallet Providers & API Keys
- *   6. Messaging Channels
+ *   6. Connectors
  *   7. Software Updates
  *   8. Chrome Extension
  *   9. Agent Export / Import
@@ -471,18 +471,22 @@ export function ConfigView() {
     void handleWalletApiKeySave(config);
   }, [handleWalletApiKeySave]);
 
-  const loadChannels = useCallback(async () => {
+  const loadConnectors = useCallback(async () => {
     setChannelsLoading(true);
     setChannelsError(null);
     try {
-      const { channels } = await client.getChannels();
-      setChannelsState(channels ?? {});
-      const masked = channels?.telegram?.maskedToken ?? null;
+      const { connectors } = await client.getConnectors();
+      const tg = (connectors?.telegram ?? {}) as Record<string, string>;
+      const hasTg = Boolean(tg.botToken?.trim());
+      const masked = hasTg ? `••••••${tg.botToken.slice(-4)}` : null;
+      setChannelsState({
+        telegram: { configured: hasTg, maskedToken: masked },
+      });
       setTelegramMaskedToken(masked);
       setTelegramTokenInput(masked ?? "");
       setTelegramTokenDirty(false);
     } catch (err) {
-      setChannelsError(err instanceof Error ? err.message : "Failed to load channels");
+      setChannelsError(err instanceof Error ? err.message : "Failed to load connectors");
     }
     setChannelsLoading(false);
   }, []);
@@ -497,27 +501,27 @@ export function ConfigView() {
     setSaveBusy(true);
     setFeedback(null);
     try {
-      await client.saveChannel("telegram", { botToken: token });
+      await client.saveConnector("telegram", { botToken: token });
       const masked = `••••••${token.slice(-4)}`;
       setTelegramMaskedToken(masked);
       setTelegramTokenInput(masked);
       setTelegramTokenDirty(false);
-      setFeedback({ type: "success", text: "Telegram channel saved. Restart agent to apply changes." });
-      await loadChannels();
+      setFeedback({ type: "success", text: "Telegram connector saved. Restart agent to apply changes." });
+      await loadConnectors();
     } catch (err) {
       setFeedback({
         type: "error",
-        text: err instanceof Error ? err.message : "Failed to save Telegram channel.",
+        text: err instanceof Error ? err.message : "Failed to save Telegram connector.",
       });
     }
     setSaveBusy(false);
-  }, [telegramTokenInput, loadChannels]);
+  }, [telegramTokenInput, loadConnectors]);
 
   const handleTelegramDelete = useCallback(async () => {
     setDeleteBusy(true);
     setFeedback(null);
     try {
-      await client.deleteChannel("telegram");
+      await client.deleteConnector("telegram");
       setChannelsState((prev) => ({
         ...prev,
         telegram: { configured: false, maskedToken: null },
@@ -526,20 +530,20 @@ export function ConfigView() {
       setTelegramTokenInput("");
       setTelegramTokenDirty(false);
       setDeleteModalOpen(false);
-      setFeedback({ type: "success", text: "Telegram channel deleted. Restart agent to apply changes." });
-      await loadChannels();
+      setFeedback({ type: "success", text: "Telegram connector deleted. Restart agent to apply changes." });
+      await loadConnectors();
     } catch (err) {
       setFeedback({
         type: "error",
-        text: err instanceof Error ? err.message : "Failed to delete Telegram channel.",
+        text: err instanceof Error ? err.message : "Failed to delete Telegram connector.",
       });
     }
     setDeleteBusy(false);
-  }, [loadChannels]);
+  }, [loadConnectors]);
 
   useEffect(() => {
-    void loadChannels();
-  }, [loadChannels]);
+    void loadConnectors();
+  }, [loadConnectors]);
 
   /* ── Character generation state ─────────────────────────────────── */
   const [generating, setGenerating] = useState<string | null>(null); // field name being generated
@@ -1411,7 +1415,7 @@ export function ConfigView() {
           ═══════════════════════════════════════════════════════════════ */}
       <div className="mt-6 p-4 border border-[var(--border)] bg-[var(--card)]">
         <div className="mb-4">
-          <div className="font-bold text-sm">Messaging Channels</div>
+          <div className="font-bold text-sm">Connectors</div>
           <div className="text-xs text-[var(--muted)] mt-0.5">
             Configure how your agent connects to messaging platforms.
           </div>

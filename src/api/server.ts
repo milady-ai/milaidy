@@ -366,30 +366,51 @@ function inferDescription(key: string): string {
   const upper = key.toUpperCase();
 
   // Special well-known suffixes
-  if (upper.endsWith("_API_KEY")) return `API key for ${prefixLabel(key, "_API_KEY")}`;
-  if (upper.endsWith("_BOT_TOKEN")) return `Bot token for ${prefixLabel(key, "_BOT_TOKEN")}`;
-  if (upper.endsWith("_TOKEN")) return `Authentication token for ${prefixLabel(key, "_TOKEN")}`;
-  if (upper.endsWith("_SECRET")) return `Secret for ${prefixLabel(key, "_SECRET")}`;
-  if (upper.endsWith("_PRIVATE_KEY")) return `Private key for ${prefixLabel(key, "_PRIVATE_KEY")}`;
-  if (upper.endsWith("_PASSWORD")) return `Password for ${prefixLabel(key, "_PASSWORD")}`;
-  if (upper.endsWith("_RPC_URL")) return `RPC endpoint URL for ${prefixLabel(key, "_RPC_URL")}`;
-  if (upper.endsWith("_BASE_URL")) return `Base URL for ${prefixLabel(key, "_BASE_URL")}`;
+  if (upper.endsWith("_API_KEY"))
+    return `API key for ${prefixLabel(key, "_API_KEY")}`;
+  if (upper.endsWith("_BOT_TOKEN"))
+    return `Bot token for ${prefixLabel(key, "_BOT_TOKEN")}`;
+  if (upper.endsWith("_TOKEN"))
+    return `Authentication token for ${prefixLabel(key, "_TOKEN")}`;
+  if (upper.endsWith("_SECRET"))
+    return `Secret for ${prefixLabel(key, "_SECRET")}`;
+  if (upper.endsWith("_PRIVATE_KEY"))
+    return `Private key for ${prefixLabel(key, "_PRIVATE_KEY")}`;
+  if (upper.endsWith("_PASSWORD"))
+    return `Password for ${prefixLabel(key, "_PASSWORD")}`;
+  if (upper.endsWith("_RPC_URL"))
+    return `RPC endpoint URL for ${prefixLabel(key, "_RPC_URL")}`;
+  if (upper.endsWith("_BASE_URL"))
+    return `Base URL for ${prefixLabel(key, "_BASE_URL")}`;
   if (upper.endsWith("_URL")) return `URL for ${prefixLabel(key, "_URL")}`;
-  if (upper.endsWith("_ENDPOINT")) return `Endpoint for ${prefixLabel(key, "_ENDPOINT")}`;
-  if (upper.endsWith("_HOST")) return `Host address for ${prefixLabel(key, "_HOST")}`;
-  if (upper.endsWith("_PORT")) return `Port number for ${prefixLabel(key, "_PORT")}`;
-  if (upper.endsWith("_MODEL") || upper.includes("_MODEL_")) return `Model identifier for ${prefixLabel(key, "_MODEL")}`;
-  if (upper.endsWith("_VOICE") || upper.includes("_VOICE_")) return `Voice setting for ${prefixLabel(key, "_VOICE")}`;
-  if (upper.endsWith("_DIR") || upper.endsWith("_PATH")) return `Directory path for ${prefixLabel(key, "_DIR").replace(/_PATH$/i, "")}`;
-  if (upper.endsWith("_ENABLED") || upper.startsWith("ENABLE_")) return `Enable/disable ${prefixLabel(key, "_ENABLED").replace(/^ENABLE_/i, "")}`;
+  if (upper.endsWith("_ENDPOINT"))
+    return `Endpoint for ${prefixLabel(key, "_ENDPOINT")}`;
+  if (upper.endsWith("_HOST"))
+    return `Host address for ${prefixLabel(key, "_HOST")}`;
+  if (upper.endsWith("_PORT"))
+    return `Port number for ${prefixLabel(key, "_PORT")}`;
+  if (upper.endsWith("_MODEL") || upper.includes("_MODEL_"))
+    return `Model identifier for ${prefixLabel(key, "_MODEL")}`;
+  if (upper.endsWith("_VOICE") || upper.includes("_VOICE_"))
+    return `Voice setting for ${prefixLabel(key, "_VOICE")}`;
+  if (upper.endsWith("_DIR") || upper.endsWith("_PATH"))
+    return `Directory path for ${prefixLabel(key, "_DIR").replace(/_PATH$/i, "")}`;
+  if (upper.endsWith("_ENABLED") || upper.startsWith("ENABLE_"))
+    return `Enable/disable ${prefixLabel(key, "_ENABLED").replace(/^ENABLE_/i, "")}`;
   if (upper.includes("DRY_RUN")) return `Dry-run mode (no real actions)`;
-  if (upper.endsWith("_INTERVAL") || upper.endsWith("_INTERVAL_MINUTES")) return `Check interval for ${prefixLabel(key, "_INTERVAL")}`;
-  if (upper.endsWith("_TIMEOUT") || upper.endsWith("_TIMEOUT_MS")) return `Timeout setting for ${prefixLabel(key, "_TIMEOUT")}`;
+  if (upper.endsWith("_INTERVAL") || upper.endsWith("_INTERVAL_MINUTES"))
+    return `Check interval for ${prefixLabel(key, "_INTERVAL")}`;
+  if (upper.endsWith("_TIMEOUT") || upper.endsWith("_TIMEOUT_MS"))
+    return `Timeout setting for ${prefixLabel(key, "_TIMEOUT")}`;
 
   // Generic: convert KEY_NAME to "Key name"
   return key
     .split("_")
-    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()))
+    .map((w, i) =>
+      i === 0
+        ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        : w.toLowerCase(),
+    )
     .join(" ");
 }
 
@@ -1270,6 +1291,10 @@ const BLOCKED_MCP_ENV_KEYS = new Set([
   "NODE_OPTIONS",
   "NODE_EXTRA_CA_CERTS",
   "ELECTRON_RUN_AS_NODE",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "RUBYOPT",
+  "PERL5OPT",
   "PATH",
   "HOME",
   "SHELL",
@@ -1317,20 +1342,34 @@ function validateMcpServerConfig(
   }
 
   if (
-    (configType === "http" ||
-      configType === "streamable-http" ||
-      configType === "sse") &&
-    !config.url
+    configType === "http" ||
+    configType === "streamable-http" ||
+    configType === "sse"
   ) {
-    return "URL is required for remote servers";
+    if (!config.url) {
+      return "URL is required for remote servers";
+    }
+    if (typeof config.url !== "string") {
+      return "URL must be a string";
+    }
+    const urlLower = config.url.toLowerCase();
+    if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
+      return "URL must use http:// or https:// scheme";
+    }
   }
 
   // Validate env vars — block keys that enable code injection
   if (config.env !== undefined) {
-    if (typeof config.env !== "object" || config.env === null || Array.isArray(config.env)) {
+    if (
+      typeof config.env !== "object" ||
+      config.env === null ||
+      Array.isArray(config.env)
+    ) {
       return "env must be a plain object of string key-value pairs";
     }
-    for (const [key, val] of Object.entries(config.env as Record<string, unknown>)) {
+    for (const [key, val] of Object.entries(
+      config.env as Record<string, unknown>,
+    )) {
       if (typeof val !== "string") {
         return `env.${key} must be a string`;
       }
@@ -1349,7 +1388,10 @@ function validateMcpServerConfig(
 
   // Validate timeoutInMillis if present
   if (config.timeoutInMillis !== undefined) {
-    if (typeof config.timeoutInMillis !== "number" || config.timeoutInMillis < 0) {
+    if (
+      typeof config.timeoutInMillis !== "number" ||
+      config.timeoutInMillis < 0
+    ) {
       return "timeoutInMillis must be a non-negative number";
     }
   }
@@ -4684,86 +4726,6 @@ async function handleRequest(
     return;
   }
 
-  // ── GET /api/channels ────────────────────────────────────────────────────
-  if (method === "GET" && pathname === "/api/channels") {
-    const channels =
-      (state.config.channels as
-        | Record<string, Record<string, unknown>>
-        | undefined) ?? {};
-
-    const telegram = channels.telegram as { botToken?: string } | undefined;
-    const masked = telegram?.botToken
-      ? `••••••${telegram.botToken.slice(-4)}`
-      : null;
-
-    json(res, {
-      channels: {
-        telegram: {
-          configured: Boolean(telegram?.botToken?.trim()),
-          maskedToken: masked,
-        },
-      },
-    });
-    return;
-  }
-
-  // ── POST /api/channels ───────────────────────────────────────────────────
-  if (method === "POST" && pathname === "/api/channels") {
-    const body = (await readJsonBody(req, res)) as {
-      name?: string;
-      config?: Record<string, unknown>;
-    } | null;
-    if (!body) return;
-
-    if (!body.name || typeof body.name !== "string") {
-      error(res, "Missing channel name", 400);
-      return;
-    }
-
-    if (!state.config.channels || typeof state.config.channels !== "object") {
-      state.config.channels = {};
-    }
-
-    (state.config.channels as Record<string, Record<string, unknown>>)[
-      body.name
-    ] = body.config ?? {};
-
-    if (body.name === "telegram") {
-      const token =
-        typeof body.config?.botToken === "string"
-          ? body.config.botToken.trim()
-          : "";
-      if (token) process.env.TELEGRAM_BOT_TOKEN = token;
-    }
-
-    saveMilaidyConfig(state.config);
-    json(res, { success: true, channel: body.name, needsRestart: true });
-    return;
-  }
-
-  // ── DELETE /api/channels/:name ───────────────────────────────────────────
-  if (method === "DELETE" && pathname.startsWith("/api/channels/")) {
-    const name = decodeURIComponent(pathname.slice("/api/channels/".length));
-    if (!name) {
-      error(res, "Missing channel name", 400);
-      return;
-    }
-
-    const channels =
-      (state.config.channels as Record<string, ConnectorConfig> | undefined) ??
-      {};
-    delete channels[name];
-    state.config.channels = channels;
-
-    if (name === "telegram") {
-      delete process.env.TELEGRAM_BOT_TOKEN;
-    }
-
-    saveMilaidyConfig(state.config);
-    json(res, { success: true, channel: name, needsRestart: true });
-    return;
-  }
-
   // ── GET /api/config ──────────────────────────────────────────────────────
   if (method === "GET" && pathname === "/api/config") {
     json(res, redactConfigSecrets(state.config));
@@ -4873,7 +4835,9 @@ async function handleRequest(
             return;
           }
           if (cfg && typeof cfg === "object") {
-            const mcpErr = validateMcpServerConfig(cfg as Record<string, unknown>);
+            const mcpErr = validateMcpServerConfig(
+              cfg as Record<string, unknown>,
+            );
             if (mcpErr) {
               error(res, `MCP server "${name}": ${mcpErr}`, 400);
               return;
@@ -5840,7 +5804,9 @@ async function handleRequest(
           return;
         }
         if (cfg && typeof cfg === "object") {
-          const mcpErr = validateMcpServerConfig(cfg as Record<string, unknown>);
+          const mcpErr = validateMcpServerConfig(
+            cfg as Record<string, unknown>,
+          );
           if (mcpErr) {
             error(res, `Server "${name}": ${mcpErr}`, 400);
             return;
