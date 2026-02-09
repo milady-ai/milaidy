@@ -277,7 +277,7 @@ if (uiOnly) {
 
   const apiCmd = hasBun
     ? ["bun", "--watch", "src/runtime/dev-server.ts"]
-    : ["node", "--import", "tsx", "--watch", "src/runtime/dev-server.ts"];
+    : ["node", "--import", "./openai-codex-stealth.mjs", "--import", "./claude-code-stealth.mjs", "--import", "tsx", "--watch", "src/runtime/dev-server.ts"];
   apiProcess = spawn(apiCmd[0], apiCmd.slice(1), {
     cwd,
     env: {
