@@ -6,15 +6,15 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
-const uiDir = path.join(projectRoot, "apps", "ui");
+const appDir = path.join(projectRoot, "apps", "app");
 
 // Resolve Playwright CLI lazily — if @playwright/test isn't installed (e.g.
-// in CI unit-test jobs that don't install apps/ui devDependencies), the
+// in CI unit-test jobs that don't install apps/app devDependencies), the
 // playwright test suite is simply skipped rather than crashing the runner.
 let playwrightCli = null;
 try {
-  const uiRequire = createRequire(path.join(uiDir, "index.js"));
-  const playwrightPkg = uiRequire.resolve("@playwright/test/package.json");
+  const appRequire = createRequire(path.join(appDir, "index.js"));
+  const playwrightPkg = appRequire.resolve("@playwright/test/package.json");
   playwrightCli = path.join(path.dirname(playwrightPkg), "cli.js");
 } catch {
   // @playwright/test not available — playwright tests will be skipped
@@ -40,7 +40,7 @@ const runs = [
           name: "e2e:playwright",
           cmd: "node",
           args: [playwrightCli, "test"],
-          cwd: uiDir,
+          cwd: appDir,
         },
       ]
     : []),

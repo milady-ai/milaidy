@@ -2,7 +2,7 @@
 /**
  * Development script that starts:
  * 1. The Milaidy dev server (runtime + API on port 31337) with restart support
- * 2. The Vite UI dev server (port 2138, proxies /api and /ws to 31337)
+ * 2. The Vite app dev server (port 2138, proxies /api and /ws to 31337)
  *
  * Automatically kills zombie processes on both ports before starting.
  * Waits for the API server to be ready before launching Vite so the proxy
@@ -24,13 +24,64 @@ const cwd = process.cwd();
 const uiOnly = process.argv.includes("--ui-only");
 
 // ---------------------------------------------------------------------------
+// ANSI colors — raw escape sequences so we don't need chalk in this .mjs file.
+// ---------------------------------------------------------------------------
+
+const supportsColor =
+  process.env.FORCE_COLOR !== "0" &&
+  process.env.NO_COLOR === undefined &&
+  process.stdout.isTTY;
+
+const GREEN = supportsColor ? "\x1b[38;2;0;255;65m" : "";
+const ORANGE = supportsColor ? "\x1b[38;2;255;165;0m" : "";
+const DIM = supportsColor ? "\x1b[2m" : "";
+const RESET = supportsColor ? "\x1b[0m" : "";
+
+function green(text) {
+  return `${GREEN}${text}${RESET}`;
+}
+function orange(text) {
+  return `${ORANGE}${text}${RESET}`;
+}
+function dim(text) {
+  return `${DIM}${text}${RESET}`;
+}
+
+// ---------------------------------------------------------------------------
+// ASCII banner — printed once at startup in cyber green (#00FF41).
+// Keep in sync with src/ascii.ts.
+// ---------------------------------------------------------------------------
+
+const ASCII_ART = `\
+        miladym                        iladym      
+    iladymil                                ady    
+    mil                                         ad   
+ymi                                   ladymila     
+dym                                    ila dymila    
+dy       miladymil                     ady   milady   
+    miladymilad                     ymila dymilady  
+    mi    ladymila                   dymiladymil     
+adymiladymiladymi                  l  adymila d    
+ym   iladymiladymil                 ad ymilad  y    
+m  il  adymiladym  i                  l   ad   y     
+    mi  ladymila  dy                    mi           
+    la          dy                         mil      
+        ad      ym                                   
+        iladym`;
+
+function printBanner() {
+  if (supportsColor) {
+    const colored = ASCII_ART.split("\n")
+      .map((line) => green(line))
+      .join("\n");
+    console.log(`\n${colored}\n`);
+  } else {
+    console.log(`\n${ASCII_ART}\n`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Runtime detection — prefer bun when available, fall back to node/npx.
-//
-// Why: Bun intercepts bare `node` calls in script mode but chokes on
-// `node --import tsx` (tsx module resolution bug in Bun ≤1.3) and doesn't
-// ship `npx`.  Detecting the runtime up-front lets us pick the right
-// binary for each child process so the dev script works in both
-// Node-only and Bun-only environments.
 // ---------------------------------------------------------------------------
 
 function which(cmd) {
@@ -39,9 +90,6 @@ function which(cmd) {
 
   const dirs = pathEnv.split(path.delimiter).filter(Boolean);
   const isWindows = process.platform === "win32";
-
-  // On Windows, commands may be invoked without an extension and resolved
-  // using PATHEXT (e.g., bun.exe, npx.cmd). Mirror that behavior here.
   const pathext = isWindows ? process.env.PATHEXT : "";
   const exts = isWindows
     ? (pathext?.length
@@ -50,9 +98,7 @@ function which(cmd) {
     : [""];
 
   for (const dir of dirs) {
-    // Always check the bare command first.
     const candidates = [cmd];
-
     if (isWindows) {
       const lowerCmd = cmd.toLowerCase();
       for (const ext of exts) {
@@ -62,7 +108,6 @@ function which(cmd) {
         }
       }
     }
-
     for (const name of candidates) {
       const candidate = path.join(dir, name);
       if (existsSync(candidate)) return candidate;
@@ -72,9 +117,8 @@ function which(cmd) {
 }
 
 const hasBun = !!which("bun");
-const hasNpx = !!which("npx");
 
-if (!hasBun && !hasNpx) {
+if (!hasBun && !which("npx")) {
   console.error(
     'Neither "bun" nor "npx" was found in your PATH. ' +
       "Install Bun or Node.js with npx to run this dev script.",
@@ -84,10 +128,6 @@ if (!hasBun && !hasNpx) {
 
 // ---------------------------------------------------------------------------
 // Output filter — only forward error-level lines from the API server.
-// The @elizaos/core logger writes structured lines to stderr with a level
-// prefix like " Info ", " Warn ", " Error ".  We suppress everything except
-// Error-level structured logs and unstructured output (console.error, stack
-// traces, fatal messages).
 // ---------------------------------------------------------------------------
 
 const SUPPRESS_RE = /^\s*(Info|Warn|Debug|Trace)\s/;
@@ -98,7 +138,7 @@ function createErrorFilter(dest) {
   return (chunk) => {
     buf += chunk.toString();
     const lines = buf.split("\n");
-    buf = lines.pop(); // keep incomplete last line in buffer
+    buf = lines.pop();
     for (const line of lines) {
       if (
         line.trim() &&
@@ -181,7 +221,6 @@ function waitForPort(port, { timeout = 120_000, interval = 500 } = {}) {
 // Main
 // ---------------------------------------------------------------------------
 
-// Kill zombie processes on dev ports before starting
 killPort(UI_PORT);
 if (!uiOnly) {
   killPort(API_PORT);
@@ -200,30 +239,27 @@ process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 
 function startVite() {
-  // Why bunx: npx is not available in Bun-only environments.
   const viteCmd = hasBun ? "bunx" : "npx";
   viteProcess = spawn(viteCmd, ["vite", "--port", String(UI_PORT)], {
-    cwd: path.join(cwd, "apps/ui"),
+    cwd: path.join(cwd, "apps/app"),
     env: { ...process.env, MILAIDY_API_PORT: String(API_PORT) },
     stdio: ["inherit", "pipe", "pipe"],
   });
 
-  // Suppress normal Vite output; print clean URL once ready
   viteProcess.stdout.on("data", (data) => {
     const text = data.toString();
     if (text.includes("ready")) {
-      console.log(`\n  milaidy dev → http://localhost:${UI_PORT}/\n`);
+      console.log(`\n  ${green("[milaidy]")} ${orange(`http://localhost:${UI_PORT}/`)}\n`);
     }
   });
 
-  // Forward Vite errors to stderr
   viteProcess.stderr.on("data", (data) => {
     process.stderr.write(data);
   });
 
   viteProcess.on("exit", (code) => {
     if (code !== 0) {
-      console.error(`[dev] Vite exited with code ${code}`);
+      console.error(`${green("[milaidy]")} Vite exited with code ${code}`);
       if (apiProcess) apiProcess.kill();
       process.exit(code ?? 1);
     }
@@ -231,19 +267,11 @@ function startVite() {
 }
 
 if (uiOnly) {
-  // UI-only mode: API server is assumed to already be running
   startVite();
 } else {
-  // Full dev mode: start API server, wait for it, then start Vite.
-  // Uses bun --watch for auto-restart on source changes.
-  // MILAIDY_HEADLESS=1 tells startEliza() to skip the CLI chat loop.
-  // LOG_LEVEL=error suppresses info/warn output in dev mode.
-  console.log("\n  [milaidy] Starting dev server...\n");
+  printBanner();
+  console.log(`  ${green("[milaidy]")} ${green("Starting dev server...")}\n`);
 
-  // Why: Bun runs .ts natively and has its own --watch; Node needs the tsx
-  // loader registered via --import.  `bun --import tsx` fails due to a
-  // module resolution bug (cannot find tsx/cjs/index.cjs), so we must
-  // choose one path or the other — not pass --import tsx to bun.
   const apiCmd = hasBun
     ? ["bun", "--watch", "src/runtime/dev-server.ts"]
     : ["node", "--import", "tsx", "--watch", "src/runtime/dev-server.ts"];
@@ -258,39 +286,33 @@ if (uiOnly) {
     stdio: ["inherit", "pipe", "pipe"],
   });
 
-  // Filter API stderr: suppress Info/Warn/Debug, forward only Error + unstructured
   apiProcess.stderr.on("data", createErrorFilter(process.stderr));
-
-  // Suppress API stdout entirely in dev mode
   apiProcess.stdout.on("data", () => {});
 
   apiProcess.on("exit", (code) => {
     if (code !== 0) {
-      console.error(`\n  [milaidy] Server exited with code ${code}`);
+      console.error(`\n  ${green("[milaidy]")} Server exited with code ${code}`);
       if (viteProcess) viteProcess.kill();
       process.exit(code ?? 1);
     }
   });
 
-  // Show a live progress indicator while waiting for the API server to be ready.
-  // Without this the terminal appears completely stuck because all API output is
-  // filtered / suppressed in dev mode.
   const startTime = Date.now();
   const dots = setInterval(() => {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-    process.stdout.write(`\r  [milaidy] Waiting for API server... ${elapsed}s`);
+    process.stdout.write(`\r  ${green("[milaidy]")} ${green(`Waiting for API server... ${dim(`${elapsed}s`)}`)}`);
   }, 1000);
 
   waitForPort(API_PORT)
     .then(() => {
       clearInterval(dots);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`\r  [milaidy] API server ready (${elapsed}s)          `);
+      console.log(`\r  ${green("[milaidy]")} ${green(`API server ready`)} ${dim(`(${elapsed}s)`)}          `);
       startVite();
     })
     .catch((err) => {
       clearInterval(dots);
-      console.error(`\n  [milaidy] ${err.message}`);
+      console.error(`\n  ${green("[milaidy]")} ${err.message}`);
       if (apiProcess) apiProcess.kill();
       process.exit(1);
     });

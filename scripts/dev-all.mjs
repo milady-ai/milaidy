@@ -3,9 +3,8 @@
  * dev:all — Start the full Milaidy development environment.
  *
  * Launches in parallel:
- *   1. Control UI (Vite dev server on port 5173)
- *   2. App (Vite dev server on port 5174)
- *   3. ElizaOS runtime (agent + plugins)
+ *   1. App (Vite dev server on port 2138, proxies /api and /ws to runtime)
+ *   2. ElizaOS runtime (agent + plugins)
  *
  * All processes share stdio; Ctrl-C kills them all.
  */
@@ -50,12 +49,6 @@ const hasBun = !!which("bun");
 
 /** @type {{ name: string; cmd: string; args: string[]; cwd: string; env?: Record<string,string> }[]} */
 const services = [
-  {
-    name: "ui",
-    cmd: hasBun ? "bun" : "node",
-    args: ["scripts/ui.js", "dev"],
-    cwd: repoRoot,
-  },
   {
     name: "app",
     cmd: hasBun

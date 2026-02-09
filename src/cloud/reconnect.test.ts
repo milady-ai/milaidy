@@ -10,7 +10,7 @@
  *   - Concurrent reconnect prevention
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,19 +29,7 @@ function createMockClient(
   } as unknown as ElizaCloudClient;
 }
 
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe("ConnectionMonitor", () => {
-  // Use real timers for these tests since the ConnectionMonitor uses
-  // fire-and-forget async ticks that don't compose well with fake timers.
-  beforeEach(() => {
-    vi.useRealTimers();
-  });
 
   it("sends heartbeats at configured interval", async () => {
     const client = createMockClient();
@@ -79,8 +67,11 @@ describe("ConnectionMonitor", () => {
     );
 
     monitor.start();
-    // Wait for 3+ ticks at 20ms each, plus some buffer
-    await sleep(120);
+    // Poll until onDisconnect fires (3 ticks at 20ms each) with generous timeout
+    const deadline = Date.now() + 1000;
+    while (!onDisconnect.mock.calls.length && Date.now() < deadline) {
+      await sleep(10);
+    }
     monitor.stop();
 
     expect(onDisconnect).toHaveBeenCalled();

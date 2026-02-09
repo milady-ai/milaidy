@@ -27,6 +27,8 @@ export const theme = {
   option: hex(CLI_PALETTE.warn),
 } as const;
 
+export const cyberGreen = hex("#00FF41");
+
 export const isRich = () => Boolean(baseChalk.level > 0);
 
 export const colorize = (

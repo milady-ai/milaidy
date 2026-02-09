@@ -344,7 +344,6 @@ export function ConfigView() {
     handleCharacterFieldInput,
     handleCharacterArrayInput,
     handleCharacterStyleInput,
-    handleCharacterMessageExamplesInput,
     handleSaveCharacter,
     loadCharacter,
     loadPlugins,
@@ -451,17 +450,9 @@ export function ConfigView() {
 
   const d = characterDraft;
   const bioText = typeof d.bio === "string" ? d.bio : Array.isArray(d.bio) ? d.bio.join("\n") : "";
-  const adjectivesText = (d.adjectives ?? []).join("\n");
-  const topicsText = (d.topics ?? []).join("\n");
   const styleAllText = (d.style?.all ?? []).join("\n");
   const styleChatText = (d.style?.chat ?? []).join("\n");
   const stylePostText = (d.style?.post ?? []).join("\n");
-  const postExamplesText = (d.postExamples ?? []).join("\n");
-  const chatExamplesText = (d.messageExamples ?? [])
-    .map((convo) =>
-      convo.examples.map((ex) => `${ex.name}: ${ex.content.text}`).join("\n"),
-    )
-    .join("\n\n");
 
   const ext = extensionStatus;
   const relayOk = ext?.relayReachable === true;
@@ -478,6 +469,71 @@ export function ConfigView() {
     });
     void handleWalletApiKeySave(config);
   }, [handleWalletApiKeySave]);
+
+  /* ── Character generation state ─────────────────────────────────── */
+  const [generating, setGenerating] = useState<string | null>(null); // field name being generated
+
+  const getCharContext = useCallback(() => ({
+    name: d.name ?? "",
+    system: d.system ?? "",
+    bio: bioText,
+    style: d.style ?? { all: [], chat: [], post: [] },
+    postExamples: d.postExamples ?? [],
+  }), [d, bioText]);
+
+  const handleGenerate = useCallback(async (field: string, mode: "append" | "replace" = "replace") => {
+    setGenerating(field);
+    try {
+      const { generated } = await client.generateCharacterField(field, getCharContext(), mode);
+      if (field === "bio") {
+        handleCharacterFieldInput("bio", generated.trim());
+      } else if (field === "style") {
+        try {
+          const parsed = JSON.parse(generated);
+          if (mode === "append") {
+            handleCharacterStyleInput("all", [...(d.style?.all ?? []), ...(parsed.all ?? [])].join("\n"));
+            handleCharacterStyleInput("chat", [...(d.style?.chat ?? []), ...(parsed.chat ?? [])].join("\n"));
+            handleCharacterStyleInput("post", [...(d.style?.post ?? []), ...(parsed.post ?? [])].join("\n"));
+          } else {
+            if (parsed.all) handleCharacterStyleInput("all", parsed.all.join("\n"));
+            if (parsed.chat) handleCharacterStyleInput("chat", parsed.chat.join("\n"));
+            if (parsed.post) handleCharacterStyleInput("post", parsed.post.join("\n"));
+          }
+        } catch { /* raw text fallback */ }
+      } else if (field === "chatExamples") {
+        try {
+          const parsed = JSON.parse(generated);
+          if (Array.isArray(parsed)) {
+            const formatted = parsed.map((convo: Array<{ user: string; content: { text: string } }>) => ({
+              examples: convo.map((msg) => ({ name: msg.user, content: { text: msg.content.text } })),
+            }));
+            handleCharacterFieldInput("messageExamples" as keyof typeof d, formatted as never);
+          }
+        } catch { /* raw text fallback */ }
+      } else if (field === "postExamples") {
+        try {
+          const parsed = JSON.parse(generated);
+          if (Array.isArray(parsed)) {
+            if (mode === "append") {
+              handleCharacterArrayInput("postExamples", [...(d.postExamples ?? []), ...parsed].join("\n"));
+            } else {
+              handleCharacterArrayInput("postExamples", parsed.join("\n"));
+            }
+          }
+        } catch { /* raw text fallback */ }
+      }
+    } catch {
+      /* generation failed — silently ignore */
+    }
+    setGenerating(null);
+  }, [getCharContext, d, handleCharacterFieldInput, handleCharacterArrayInput, handleCharacterStyleInput]);
+
+  const handleRandomName = useCallback(async () => {
+    try {
+      const { name } = await client.getRandomName();
+      handleCharacterFieldInput("name", name);
+    } catch { /* ignore */ }
+  }, [handleCharacterFieldInput]);
 
   /* ── RPC provider selection state ────────────────────────────────── */
   const [selectedEvmRpc, setSelectedEvmRpc] = useState<"alchemy" | "infura" | "ankr">("alchemy");
@@ -556,28 +612,45 @@ export function ConfigView() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {/* Name */}
+            {/* Name — short field with random name button */}
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-xs">Name</label>
-              <div className="text-[11px] text-[var(--muted)]">
-                Agent display name (max 100 characters)
+              <div className="text-[11px] text-[var(--muted)]">Agent display name (max 50 characters)</div>
+              <div className="flex items-center gap-2 max-w-[280px]">
+                <input
+                  type="text"
+                  value={d.name ?? ""}
+                  maxLength={50}
+                  placeholder="Agent name"
+                  onChange={(e) => handleCharacterFieldInput("name", e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
+                />
+                <button
+                  className="px-2 py-1.5 border border-[var(--border)] bg-[var(--card)] text-[13px] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                  onClick={() => void handleRandomName()}
+                  title="Random name"
+                  type="button"
+                >
+                  &#x21bb;
+                </button>
               </div>
-              <input
-                type="text"
-                value={d.name ?? ""}
-                maxLength={100}
-                placeholder="Agent name"
-                onChange={(e) => handleCharacterFieldInput("name", e.target.value)}
-                className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
-              />
             </div>
 
-            {/* Bio */}
+            {/* Bio — with generate button */}
             <div className="flex flex-col gap-1">
-              <label className="font-semibold text-xs">Bio</label>
-              <div className="text-[11px] text-[var(--muted)]">
-                Biography — one paragraph per line
+              <div className="flex items-center gap-2">
+                <label className="font-semibold text-xs">Bio</label>
+                <button
+                  className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                  onClick={() => void handleGenerate("bio")}
+                  disabled={generating === "bio"}
+                  title="Generate bio using AI"
+                  type="button"
+                >
+                  {generating === "bio" ? "generating..." : "generate"}
+                </button>
               </div>
+              <div className="text-[11px] text-[var(--muted)]">Biography — one paragraph per line</div>
               <textarea
                 value={bioText}
                 rows={4}
@@ -590,9 +663,7 @@ export function ConfigView() {
             {/* System Prompt */}
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-xs">System Prompt</label>
-              <div className="text-[11px] text-[var(--muted)]">
-                Core behavior instructions for the agent (max 10,000 characters)
-              </div>
+              <div className="text-[11px] text-[var(--muted)]">Core behavior instructions for the agent (max 10,000 characters)</div>
               <textarea
                 value={d.system ?? ""}
                 rows={6}
@@ -608,46 +679,34 @@ export function ConfigView() {
               <summary className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold list-none [&::-webkit-details-marker]:hidden">
                 <span className="inline-block transition-transform group-open:rotate-90">&#9654;</span>
                 Advanced
-                <span className="font-normal text-[var(--muted)]">— adjectives, topics, style, examples</span>
+                <span className="font-normal text-[var(--muted)]">— style, chat examples, post examples</span>
               </summary>
 
               <div className="flex flex-col gap-4 mt-3 pl-0.5">
-                {/* Adjectives & Topics (side by side) */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-xs">Adjectives</label>
-                    <div className="text-[11px] text-[var(--muted)]">
-                      Personality adjectives — one per line
-                    </div>
-                    <textarea
-                      value={adjectivesText}
-                      rows={3}
-                      placeholder={"curious\nwitty\nfriendly"}
-                      onChange={(e) => handleCharacterArrayInput("adjectives", e.target.value)}
-                      className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs font-inherit resize-y leading-relaxed focus:border-[var(--accent)] focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-xs">Topics</label>
-                    <div className="text-[11px] text-[var(--muted)]">
-                      Topics the agent knows — one per line
-                    </div>
-                    <textarea
-                      value={topicsText}
-                      rows={3}
-                      placeholder={"artificial intelligence\nblockchain\ncreative writing"}
-                      onChange={(e) => handleCharacterArrayInput("topics", e.target.value)}
-                      className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs font-inherit resize-y leading-relaxed focus:border-[var(--accent)] focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Style */}
+                {/* Style — with generate (append) and recycle (replace) buttons */}
                 <div className="flex flex-col gap-1">
-                  <label className="font-semibold text-xs">Style</label>
-                  <div className="text-[11px] text-[var(--muted)]">
-                    Communication style guidelines — one rule per line
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-xs">Style</label>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("style", "append")}
+                      disabled={generating === "style"}
+                      title="Add more style rules"
+                      type="button"
+                    >
+                      {generating === "style" ? "generating..." : "+ generate"}
+                    </button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("style", "replace")}
+                      disabled={generating === "style"}
+                      title="Regenerate all style rules"
+                      type="button"
+                    >
+                      &#x21bb; recycle
+                    </button>
                   </div>
+                  <div className="text-[11px] text-[var(--muted)]">Communication style guidelines — one rule per line</div>
 
                   <div className="grid grid-cols-3 gap-3 mt-1 p-3 border border-[var(--border)] bg-[var(--bg-muted)]">
                     <div className="flex flex-col gap-1">
@@ -683,34 +742,140 @@ export function ConfigView() {
                   </div>
                 </div>
 
-                {/* Chat Examples */}
+                {/* Chat Examples — individual conversation cards */}
                 <div className="flex flex-col gap-1">
-                  <label className="font-semibold text-xs">Chat Examples</label>
-                  <div className="text-[11px] text-[var(--muted)]">
-                    Example conversations — format as &quot;Name: message&quot;, separate conversations with a blank line
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-xs">Chat Examples</label>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("chatExamples", "replace")}
+                      disabled={generating === "chatExamples"}
+                      title="Generate new chat examples"
+                      type="button"
+                    >
+                      {generating === "chatExamples" ? "generating..." : "generate"}
+                    </button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("chatExamples", "replace")}
+                      disabled={generating === "chatExamples"}
+                      title="Regenerate all chat examples"
+                      type="button"
+                    >
+                      &#x21bb; recycle
+                    </button>
                   </div>
-                  <textarea
-                    value={chatExamplesText}
-                    rows={5}
-                    placeholder={"User: Hello, what can you help me with?\nAgent: I can help with research, writing, and creative projects!\n\nUser: Tell me something interesting.\nAgent: Did you know octopuses have three hearts?"}
-                    onChange={(e) => handleCharacterMessageExamplesInput(e.target.value)}
-                    className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs font-[var(--mono)] resize-y leading-relaxed focus:border-[var(--accent)] focus:outline-none"
-                  />
+                  <div className="text-[11px] text-[var(--muted)]">Example conversations showing how the agent responds</div>
+
+                  <div className="flex flex-col gap-2 mt-1">
+                    {(d.messageExamples ?? []).map((convo, ci) => (
+                      <div key={ci} className="p-2.5 border border-[var(--border)] bg-[var(--bg-muted)]">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] text-[var(--muted)] font-semibold">Conversation {ci + 1}</span>
+                          <button
+                            className="text-[10px] text-[var(--muted)] hover:text-[var(--danger,#e74c3c)] cursor-pointer"
+                            onClick={() => {
+                              const updated = [...(d.messageExamples ?? [])];
+                              updated.splice(ci, 1);
+                              handleCharacterFieldInput("messageExamples" as keyof typeof d, updated as never);
+                            }}
+                            type="button"
+                          >
+                            remove
+                          </button>
+                        </div>
+                        {convo.examples.map((msg, mi) => (
+                          <div key={mi} className="flex gap-2 mb-1 last:mb-0">
+                            <span className={`text-[10px] font-semibold shrink-0 w-16 pt-0.5 ${msg.name === "{{user1}}" ? "text-[var(--muted)]" : "text-[var(--accent)]"}`}>
+                              {msg.name === "{{user1}}" ? "User" : "Agent"}
+                            </span>
+                            <input
+                              type="text"
+                              value={msg.content.text}
+                              onChange={(e) => {
+                                const updated = [...(d.messageExamples ?? [])];
+                                const convoClone = { examples: [...updated[ci].examples] };
+                                convoClone.examples[mi] = { ...convoClone.examples[mi], content: { text: e.target.value } };
+                                updated[ci] = convoClone;
+                                handleCharacterFieldInput("messageExamples" as keyof typeof d, updated as never);
+                              }}
+                              className="flex-1 px-2 py-1 border border-[var(--border)] bg-[var(--card)] text-xs focus:border-[var(--accent)] focus:outline-none"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {(d.messageExamples ?? []).length === 0 && (
+                      <div className="text-[11px] text-[var(--muted)] py-2">No chat examples yet. Click generate to create some.</div>
+                    )}
+                  </div>
                 </div>
 
-                {/* Post Examples */}
+                {/* Post Examples — individual post cards */}
                 <div className="flex flex-col gap-1">
-                  <label className="font-semibold text-xs">Post Examples</label>
-                  <div className="text-[11px] text-[var(--muted)]">
-                    Example social media posts — one per line
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-xs">Post Examples</label>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("postExamples", "append")}
+                      disabled={generating === "postExamples"}
+                      title="Generate more posts"
+                      type="button"
+                    >
+                      {generating === "postExamples" ? "generating..." : "+ generate"}
+                    </button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                      onClick={() => void handleGenerate("postExamples", "replace")}
+                      disabled={generating === "postExamples"}
+                      title="Regenerate all posts"
+                      type="button"
+                    >
+                      &#x21bb; recycle
+                    </button>
                   </div>
-                  <textarea
-                    value={postExamplesText}
-                    rows={3}
-                    placeholder="Just shipped a new feature! Excited to see what you build with it."
-                    onChange={(e) => handleCharacterArrayInput("postExamples", e.target.value)}
-                    className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs font-inherit resize-y leading-relaxed focus:border-[var(--accent)] focus:outline-none"
-                  />
+                  <div className="text-[11px] text-[var(--muted)]">Example social media posts this agent would write</div>
+
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    {(d.postExamples ?? []).map((post, pi) => (
+                      <div key={pi} className="flex gap-2 items-start">
+                        <input
+                          type="text"
+                          value={post}
+                          onChange={(e) => {
+                            const updated = [...(d.postExamples ?? [])];
+                            updated[pi] = e.target.value;
+                            handleCharacterFieldInput("postExamples" as keyof typeof d, updated as never);
+                          }}
+                          className="flex-1 px-2 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs focus:border-[var(--accent)] focus:outline-none"
+                        />
+                        <button
+                          className="text-[10px] text-[var(--muted)] hover:text-[var(--danger,#e74c3c)] cursor-pointer shrink-0 py-1.5"
+                          onClick={() => {
+                            const updated = [...(d.postExamples ?? [])];
+                            updated.splice(pi, 1);
+                            handleCharacterFieldInput("postExamples" as keyof typeof d, updated as never);
+                          }}
+                          type="button"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                    {(d.postExamples ?? []).length === 0 && (
+                      <div className="text-[11px] text-[var(--muted)] py-2">No post examples yet. Click generate to create some.</div>
+                    )}
+                    <button
+                      className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] cursor-pointer self-start mt-0.5"
+                      onClick={() => {
+                        const updated = [...(d.postExamples ?? []), ""];
+                        handleCharacterFieldInput("postExamples" as keyof typeof d, updated as never);
+                      }}
+                      type="button"
+                    >
+                      + add post
+                    </button>
+                  </div>
                 </div>
               </div>
             </details>

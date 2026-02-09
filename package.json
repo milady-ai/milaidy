@@ -32,8 +32,8 @@
   },
   "scripts": {
     "benchmark:server": "node --import tsx src/benchmark/server.ts",
-    "build": "tsdown && scripts/rt.sh scripts/write-build-info.ts && scripts/rt.sh scripts/ui.js build && cd apps/app && ../../scripts/rt.sh run build",
-    "build:node": "tsdown && node --import tsx scripts/write-build-info.ts && node scripts/ui.js build && cd apps/app && npm run build",
+    "build": "tsdown && scripts/rt.sh scripts/write-build-info.ts && cd apps/app && ../../scripts/rt.sh run build",
+    "build:node": "tsdown && node --import tsx scripts/write-build-info.ts && cd apps/app && npm run build",
     "build:android": "cd apps/app && ../../scripts/rt.sh run build:android",
     "build:desktop": "cd apps/app && ../../scripts/rt.sh run build:electron",
     "build:ios": "cd apps/app && ../../scripts/rt.sh run build:ios",
@@ -84,15 +84,12 @@
     "test:install:e2e:openai": "MILAIDY_E2E_MODELS=openai bash test/scripts/test-install-sh-e2e-docker.sh",
     "test:install:smoke": "bash test/scripts/test-install-sh-docker.sh",
     "test:live": "MILAIDY_LIVE_TEST=1 vitest run --config vitest.live.config.ts",
-    "test:ui": "cd apps/ui && ../../scripts/rt.sh run test",
     "test:watch": "vitest",
     "tui": "scripts/rt.sh scripts/run-node.mjs tui",
-    "tui:dev": "MILAIDY_PROFILE=dev scripts/rt.sh scripts/run-node.mjs --dev tui",
-    "ui:build": "scripts/rt.sh scripts/ui.js build",
-    "ui:dev": "scripts/rt.sh scripts/ui.js dev",
-    "ui:install": "scripts/rt.sh scripts/ui.js install"
+    "tui:dev": "MILAIDY_PROFILE=dev scripts/rt.sh scripts/run-node.mjs --dev tui"
   },
   "dependencies": {
+    "@capacitor/core": "^8.0.2",
     "@clack/prompts": "^1.0.0",
     "@elizaos/core": "2.0.0-alpha.3",
     "@elizaos/plugin-acp": "next",
@@ -146,10 +143,12 @@
     "@homunculuslabs/plugin-zai": "2.0.0-alpha.1",
     "@mariozechner/pi-ai": "^0.52.9",
     "@noble/curves": "^2.0.1",
+    "@tailwindcss/vite": "^4.1.18",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dotenv": "^17.2.3",
     "json5": "^2.2.3",
+    "tailwindcss": "^4.1.18",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },

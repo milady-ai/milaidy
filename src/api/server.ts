@@ -2356,6 +2356,88 @@ async function handleRequest(
     return;
   }
 
+  // ── GET /api/character/random-name ────────────────────────────────────
+  if (method === "GET" && pathname === "/api/character/random-name") {
+    const names = pickRandomNames(1);
+    json(res, { name: names[0] ?? "Reimu" });
+    return;
+  }
+
+  // ── POST /api/character/generate ────────────────────────────────────
+  if (method === "POST" && pathname === "/api/character/generate") {
+    const body = await readJsonBody<{
+      field: string;
+      context: {
+        name?: string;
+        system?: string;
+        bio?: string;
+        style?: { all?: string[]; chat?: string[]; post?: string[] };
+        postExamples?: string[];
+      };
+      mode?: "append" | "replace";
+    }>(req, res);
+    if (!body) return;
+
+    const { field, context: ctx, mode } = body;
+    if (!field || !ctx) {
+      error(res, "field and context are required", 400);
+      return;
+    }
+
+    const rt = state.runtime;
+    if (!rt) {
+      error(res, "Agent runtime not available. Start the agent first.", 503);
+      return;
+    }
+
+    const charSummary = [
+      ctx.name ? `Name: ${ctx.name}` : "",
+      ctx.system ? `System prompt: ${ctx.system}` : "",
+      ctx.bio ? `Bio: ${ctx.bio}` : "",
+      ctx.style?.all?.length ? `Style rules: ${ctx.style.all.join("; ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    let prompt = "";
+
+    if (field === "bio") {
+      prompt = `Given this character:\n${charSummary}\n\nWrite a concise, compelling bio for this character (3-4 short paragraphs, one per line). Just output the bio lines, nothing else. Match the character's voice and personality.`;
+    } else if (field === "style") {
+      const existing =
+        mode === "append" && ctx.style?.all?.length
+          ? `\nExisting style rules (add to these, don't repeat):\n${ctx.style.all.join("\n")}`
+          : "";
+      prompt = `Given this character:\n${charSummary}${existing}\n\nGenerate 4-6 communication style rules for this character. Output a JSON object with keys "all", "chat", "post", each containing an array of short rule strings. Just output the JSON, nothing else.`;
+    } else if (field === "chatExamples") {
+      prompt = `Given this character:\n${charSummary}\n\nGenerate 3 example chat conversations showing how this character responds. Output a JSON array where each element is an array of message objects like [{"user":"{{user1}}","content":{"text":"..."}},{"user":"{{agentName}}","content":{"text":"..."}}]. Just output the JSON array, nothing else.`;
+    } else if (field === "postExamples") {
+      const existing =
+        mode === "append" && ctx.postExamples?.length
+          ? `\nExisting posts (add new ones, don't repeat):\n${ctx.postExamples.join("\n")}`
+          : "";
+      prompt = `Given this character:\n${charSummary}${existing}\n\nGenerate 3-5 example social media posts this character would write. Output a JSON array of strings. Just output the JSON array, nothing else.`;
+    } else {
+      error(res, `Unknown field: ${field}`, 400);
+      return;
+    }
+
+    try {
+      const { ModelType } = await import("@elizaos/core");
+      const result = await rt.useModel(ModelType.TEXT_SMALL, {
+        prompt,
+        temperature: 0.8,
+        maxTokens: 1500,
+      });
+      json(res, { generated: String(result) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "generation failed";
+      logger.error(`[character-generate] ${msg}`);
+      error(res, msg, 500);
+    }
+    return;
+  }
+
   // ── GET /api/character/schema ───────────────────────────────────────────
   if (method === "GET" && pathname === "/api/character/schema") {
     json(res, {

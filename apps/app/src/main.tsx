@@ -1,21 +1,21 @@
 /**
  * Milaidy Capacitor App Entry Point
  *
- * This file initializes the Capacitor runtime and loads the Milaidy UI.
- * It handles platform-specific initialization and provides bridges between
- * the web UI and native capabilities.
+ * This file initializes the Capacitor runtime, sets up platform-specific
+ * features, and mounts the React application.
  */
 
+import "./styles.css";
+
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Keyboard } from "@capacitor/keyboard";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
-// Import styles from the shared UI
-import "./styles.css";
-
-// Import the main app component which registers <milaidy-app>
-import "./app";
+import { App } from "./App";
+import { AppProvider } from "./AppContext";
 
 // Import Capacitor bridge utilities
 import { initializeCapacitorBridge } from "./bridge/capacitor-bridge.js";
@@ -80,7 +80,7 @@ async function initializeAgent(): Promise<void> {
 
     // Dispatch event so the UI knows the agent is available
     document.dispatchEvent(
-      new CustomEvent("milaidy:agent-ready", { detail: status })
+      new CustomEvent("milaidy:agent-ready", { detail: status }),
     );
   } catch (err) {
     console.warn("[Milaidy] Agent not available:", err instanceof Error ? err.message : err);
@@ -178,9 +178,6 @@ function initializeAppLifecycle(): void {
   CapacitorApp.addListener("backButton", ({ canGoBack }) => {
     if (canGoBack) {
       window.history.back();
-    } else {
-      // Optionally minimize app or show exit confirmation
-      // For now, we'll just let the default behavior happen
     }
   });
 
@@ -235,7 +232,7 @@ function handleDeepLink(url: string): void {
             document.dispatchEvent(
               new CustomEvent("milaidy:connect", {
                 detail: { gatewayUrl: validatedUrl.href },
-              })
+              }),
             );
           } catch {
             console.error("[Milaidy] Invalid gateway URL format");
@@ -247,7 +244,8 @@ function handleDeepLink(url: string): void {
         const title = parsed.searchParams.get("title")?.trim() || undefined;
         const text = parsed.searchParams.get("text")?.trim() || undefined;
         const sharedUrl = parsed.searchParams.get("url")?.trim() || undefined;
-        const files = parsed.searchParams.getAll("file")
+        const files = parsed.searchParams
+          .getAll("file")
           .map((filePath) => filePath.trim())
           .filter((filePath) => filePath.length > 0)
           .map((filePath) => {
@@ -340,17 +338,33 @@ function setupPlatformStyles(): void {
 }
 
 /**
+ * Mount the React application into the DOM
+ */
+function mountReactApp(): void {
+  const rootEl = document.getElementById("root");
+  if (!rootEl) throw new Error("Root element #root not found");
+
+  createRoot(rootEl).render(
+    <StrictMode>
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </StrictMode>,
+  );
+}
+
+/**
  * Main initialization
  */
 async function main(): Promise<void> {
   // Set up platform-specific styles first
   setupPlatformStyles();
 
-  // Initialize platform features
-  await initializePlatform();
+  // Mount the React app
+  mountReactApp();
 
-  // The <milaidy-app> custom element is automatically registered
-  // when we import the app.js module above
+  // Initialize platform features (Capacitor bridges, native plugins, etc.)
+  await initializePlatform();
 }
 
 // Run initialization when DOM is ready

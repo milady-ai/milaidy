@@ -9,7 +9,7 @@
 - **Tests:** colocated `*.test.ts` alongside source files
 - **Build output:** `dist/` (via `tsdown`)
 - **Entry points:** `src/entry.ts` (CLI), `src/index.ts` (library), `src/runtime/eliza.ts` (ElizaOS runtime)
-- **Apps:** `apps/app/` (Capacitor mobile/desktop), `apps/ui/` (web UI), `apps/chrome-extension/`
+- **Apps:** `apps/app/` (Capacitor mobile/desktop, includes React UI), `apps/chrome-extension/`
 - **Deployment:** `deploy/` (Docker configs)
 - **Scripts:** `scripts/` (build, dev, release tooling)
 - **Tests:** `test/` (setup, helpers, mocks, e2e scripts)

@@ -42,7 +42,7 @@ async function openInBrowser(url: string): Promise<void> {
 }
 
 const DEFAULT_PORT = 2138;
-const CONTROL_UI_DEV_PORT = 2138;
+const APP_DEV_PORT = 2138;
 
 export function registerDashboardCommand(program: Command) {
   program
@@ -70,8 +70,8 @@ export function registerDashboardCommand(program: Command) {
         return;
       }
 
-      if (await isPortListening(CONTROL_UI_DEV_PORT)) {
-        const url = `http://localhost:${CONTROL_UI_DEV_PORT}`;
+      if (await isPortListening(APP_DEV_PORT)) {
+        const url = `http://localhost:${APP_DEV_PORT}`;
         console.log(
           `${theme.muted("→")} Opening Control UI (dev server): ${url}`,
         );
@@ -80,7 +80,7 @@ export function registerDashboardCommand(program: Command) {
       }
 
       console.log(
-        `${theme.muted("→")} Server not running on port ${port}; starting Control UI dev server…`,
+        `${theme.muted("→")} Server not running on port ${port}; starting app dev server…`,
       );
 
       const path = await import("node:path");
@@ -101,14 +101,14 @@ export function registerDashboardCommand(program: Command) {
         return;
       }
 
-      const uiDir = path.join(pkgRoot, "apps", "ui");
-      if (!fs.existsSync(path.join(uiDir, "package.json"))) {
+      const appDir = path.join(pkgRoot, "apps", "app");
+      if (!fs.existsSync(path.join(appDir, "package.json"))) {
         console.log(
-          theme.error("Control UI is not available in this installation."),
+          theme.error("App UI is not available in this installation."),
         );
         console.log(
           theme.muted(
-            "The Control UI dev server requires a development checkout.",
+            "The app dev server requires a development checkout.",
           ),
         );
         console.log(
@@ -120,10 +120,9 @@ export function registerDashboardCommand(program: Command) {
         return;
       }
 
-      const uiScript = path.join(pkgRoot, "scripts", "ui.js");
       const { spawn } = await import("node:child_process");
-      const child = spawn("node", [uiScript, "dev"], {
-        cwd: pkgRoot,
+      const child = spawn("npx", ["vite"], {
+        cwd: appDir,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
       });
@@ -133,7 +132,7 @@ export function registerDashboardCommand(program: Command) {
       const tryOpen = () => {
         if (opened) return;
         opened = true;
-        const devUrl = `http://localhost:${CONTROL_UI_DEV_PORT}`;
+        const devUrl = `http://localhost:${APP_DEV_PORT}`;
         console.log(`${theme.muted("→")} Opening Control UI: ${devUrl}`);
         openInBrowser(devUrl);
       };
@@ -152,7 +151,7 @@ export function registerDashboardCommand(program: Command) {
 
       child.on("error", (err) => {
         console.log(
-          theme.error(`Failed to start UI dev server: ${err.message}`),
+          theme.error(`Failed to start app dev server: ${err.message}`),
         );
         process.exitCode = 1;
       });

@@ -972,6 +972,21 @@ export class MilaidyClient {
     return this.fetch("/api/character");
   }
 
+  async getRandomName(): Promise<{ name: string }> {
+    return this.fetch("/api/character/random-name");
+  }
+
+  async generateCharacterField(
+    field: string,
+    context: { name?: string; system?: string; bio?: string; style?: { all?: string[]; chat?: string[]; post?: string[] }; postExamples?: string[] },
+    mode?: "append" | "replace",
+  ): Promise<{ generated: string }> {
+    return this.fetch("/api/character/generate", {
+      method: "POST",
+      body: JSON.stringify({ field, context, mode }),
+    });
+  }
+
   async updateCharacter(character: CharacterData): Promise<{ ok: boolean; character: CharacterData; agentName: string }> {
     return this.fetch("/api/character", {
       method: "PUT",
