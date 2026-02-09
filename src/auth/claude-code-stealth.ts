@@ -69,13 +69,18 @@ export function installClaudeCodeStealthFetchInterceptor(): void {
       init?.headers ?? request?.headers ?? undefined,
     );
     const apiKey = headers.get("x-api-key");
+    const authHeader = headers.get("authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
-    if (!isSetupToken(apiKey)) {
+    // Check both x-api-key and Authorization: Bearer for setup tokens
+    const setupToken = isSetupToken(apiKey) ? apiKey : isSetupToken(bearerToken) ? bearerToken : null;
+
+    if (!setupToken) {
       return originalFetch(input, init);
     }
 
     headers.delete("x-api-key");
-    headers.set("authorization", `Bearer ${apiKey}`);
+    headers.set("authorization", `Bearer ${setupToken}`);
     headers.set("anthropic-beta", ANTHROPIC_BETA);
     headers.set("user-agent", `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`);
     headers.set("x-app", "cli");
