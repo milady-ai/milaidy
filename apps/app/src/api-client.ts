@@ -769,6 +769,21 @@ export class MilaidyClient {
     });
   }
 
+  async getChannels(): Promise<{ channels: Record<string, { configured: boolean; enabled: boolean }> }> {
+    return this.fetch("/api/channels");
+  }
+
+  async saveChannel(name: string, config: Record<string, unknown>): Promise<{ ok: boolean; message: string }> {
+    return this.fetch("/api/channels", {
+      method: "POST",
+      body: JSON.stringify({ name, config }),
+    });
+  }
+
+  async deleteChannel(name: string): Promise<{ ok: boolean }> {
+    return this.fetch(`/api/channels/${name}`, { method: "DELETE" });
+  }
+
   async getSkills(): Promise<{ skills: SkillInfo[] }> {
     return this.fetch("/api/skills");
   }

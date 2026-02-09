@@ -22,6 +22,7 @@ export function OnboardingWizard() {
     onboardingSelectedChains,
     onboardingRpcSelections,
     onboardingRpcKeys,
+    onboardingChannels,
     cloudConnected,
     cloudLoginBusy,
     cloudLoginError,
@@ -439,6 +440,49 @@ export function OnboardingWizard() {
           </div>
         );
 
+      case "channels":
+        return (
+          <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
+            <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[360px] relative text-[15px] text-txt leading-relaxed">
+              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Messaging Channels</h2>
+              <p className="text-muted text-sm">Connect your agent to messaging platforms (optional)</p>
+            </div>
+            <div className="flex flex-col gap-3 text-left max-w-[360px] mx-auto">
+              <div className="px-4 py-3 border border-border bg-card">
+                <div className="font-bold text-sm">Telegram</div>
+                <div className="text-xs text-muted mt-0.5">Connect via @BotFather bot token</div>
+                <div className="mt-3">
+                  <input
+                    type="password"
+                    value={onboardingChannels.telegram?.botToken || ""}
+                    onChange={(e) => {
+                      const updated = { ...onboardingChannels };
+                      updated.telegram = { ...updated.telegram, botToken: e.target.value };
+                      setState("onboardingChannels", updated);
+                    }}
+                    placeholder="Bot token from @BotFather"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-4 py-3 border border-border bg-card opacity-50">
+                <div className="font-bold text-sm flex items-center gap-2">
+                  Discord <span className="text-xs bg-border px-2 py-0.5 rounded">Coming Soon</span>
+                </div>
+                <div className="text-xs text-muted mt-0.5">Discord bot integration (plugin in development)</div>
+              </div>
+
+              <div className="px-4 py-3 border border-border bg-card opacity-50">
+                <div className="font-bold text-sm flex items-center gap-2">
+                  WhatsApp <span className="text-xs bg-border px-2 py-0.5 rounded">Coming Soon</span>
+                </div>
+                <div className="text-xs text-muted mt-0.5">WhatsApp via Baileys (plugin in development)</div>
+              </div>
+            </div>
+          </div>
+        );
+
       default:
         return null;
     }
@@ -465,6 +509,8 @@ export function OnboardingWizard() {
       case "llmProvider":
         return onboardingProvider.length > 0 && onboardingApiKey.length > 0;
       case "inventorySetup":
+        return true;
+      case "channels":
         return true;
       default:
         return false;

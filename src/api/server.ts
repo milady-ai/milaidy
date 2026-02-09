@@ -5227,6 +5227,53 @@ async function handleRequest(
     return;
   }
 
+  // ── GET /api/channels ─────────────────────────────────────────────────
+  if (method === "GET" && pathname === "/api/channels") {
+    const channels = state.config.channels || {};
+    const result: Record<string, { configured: boolean; enabled: boolean }> = {};
+    for (const [name, config] of Object.entries(channels)) {
+      const cfg = config as Record<string, unknown>;
+      result[name] = {
+        configured: Boolean(cfg.botToken || cfg.token || cfg.apiKey),
+        enabled: cfg.enabled !== false,
+      };
+    }
+    json(res, { channels: result });
+    return;
+  }
+
+  // ── POST /api/channels ─────────────────────────────────────────────────
+  if (method === "POST" && pathname === "/api/channels") {
+    const body = (await readJsonBody(req, res)) as { name?: string; config?: Record<string, unknown> } | null;
+    if (!body?.name || !body?.config) {
+      error(res, "Missing name or config", 400);
+      return;
+    }
+    const validChannels = ["telegram", "discord", "whatsapp", "slack", "signal"];
+    if (!validChannels.includes(body.name)) {
+      error(res, `Invalid channel: ${body.name}`, 400);
+      return;
+    }
+    if (!state.config.channels) state.config.channels = {};
+    (state.config.channels as Record<string, unknown>)[body.name] = { ...body.config, enabled: true };
+    await saveMilaidyConfig(state.config);
+    json(res, { ok: true, message: `Channel ${body.name} configured. Restart to apply.` });
+    return;
+  }
+
+  // ── DELETE /api/channels/:name ──────────────────────────────────────────
+  if (method === "DELETE" && pathname.startsWith("/api/channels/")) {
+    const name = pathname.split("/").pop();
+    if (!name || !state.config.channels) {
+      error(res, "Channel not found", 404);
+      return;
+    }
+    delete (state.config.channels as Record<string, unknown>)[name];
+    await saveMilaidyConfig(state.config);
+    json(res, { ok: true });
+    return;
+  }
+
   // ── Fallback ────────────────────────────────────────────────────────────
   error(res, "Not found", 404);
 }
