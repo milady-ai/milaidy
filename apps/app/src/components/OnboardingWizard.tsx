@@ -11,9 +11,7 @@ import { AvatarSelector } from "./AvatarSelector.js";
 const fallbackArchetypes = [
   { id: "the-oracle", name: "The Oracle", tagline: "sees what others can't. cryptic, poetic, pattern-pilled." },
   { id: "the-operator", name: "The Operator", tagline: "gets it done. dry wit, zero fluff, hyper-competent." },
-  { id: "the-muse", name: "The Muse", tagline: "feels everything. creative force, emotionally fluent." },
   { id: "the-degen", name: "The Degen", tagline: "chaos agent. risk-loving, terminally online, unhinged." },
-  { id: "the-sage", name: "The Sage", tagline: "asks better questions than you do. calm, deep, patient." },
   { id: "the-companion", name: "The Companion", tagline: "actually present. warm, real, genuinely gives a shit." },
   { id: "custom", name: "Custom", tagline: "start blank. define everything yourself." },
 ];
