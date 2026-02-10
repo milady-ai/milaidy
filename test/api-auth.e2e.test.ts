@@ -9,12 +9,14 @@
  * - Pairing endpoint (/api/auth/pair)
  * - Auth bypass when no token is configured
  * - Bearer, X-Milaidy-Token, X-Api-Key header extraction
+ * - WebSocket auth on /ws
  * - Loopback binding (MILAIDY_API_BIND)
  *
  * NO MOCKS — all tests spin up a real HTTP server.
  */
 import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
 import { startApiServer } from "../src/api/server.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +72,48 @@ function req(
     r.on("error", reject);
     if (b) r.write(b);
     r.end();
+  });
+}
+
+function connectWs(url: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error("WebSocket connection timed out"));
+    }, 3000);
+    ws.once("open", () => {
+      clearTimeout(timer);
+      resolve(ws);
+    });
+    ws.once("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function expectWsRejected(url: string, expectedStatus = 401): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error("WebSocket rejection timed out"));
+    }, 3000);
+    ws.once("open", () => {
+      clearTimeout(timer);
+      ws.terminate();
+      reject(new Error("WebSocket unexpectedly connected"));
+    });
+    ws.once("error", (err) => {
+      clearTimeout(timer);
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes(String(expectedStatus))) {
+        reject(new Error(`Unexpected WebSocket error: ${message}`));
+        return;
+      }
+      resolve();
+    });
   });
 }
 
@@ -182,6 +226,17 @@ describe("Token auth gate (MILAIDY_API_TOKEN set)", () => {
       headers: { Authorization: "Bearer " },
     });
     expect(status).toBe(401);
+  });
+
+  it("rejects websocket upgrades without auth token (401)", async () => {
+    await expectWsRejected(`ws://127.0.0.1:${port}/ws`, 401);
+  });
+
+  it("accepts websocket upgrades with token query parameter", async () => {
+    const ws = await connectWs(
+      `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(TEST_TOKEN)}`,
+    );
+    ws.close();
   });
 
   // ── Accept with correct token ──────────────────────────────────────────

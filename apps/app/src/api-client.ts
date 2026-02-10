@@ -1336,9 +1336,11 @@ export class MilaidyClient {
     if (!host) return;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${host}/ws`;
+    const wsUrl = new URL(`${protocol}//${host}/ws`);
+    const token = this.apiToken;
+    if (token) wsUrl.searchParams.set("token", token);
 
-    this.ws = new WebSocket(url);
+    this.ws = new WebSocket(wsUrl.toString());
 
     this.ws.onopen = () => {
       this.backoffMs = 500;

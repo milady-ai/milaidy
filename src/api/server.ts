@@ -1581,15 +1581,31 @@ function extractAuthToken(req: http.IncomingMessage): string | null {
   return null;
 }
 
-function isAuthorized(req: http.IncomingMessage): boolean {
+function hasValidApiToken(provided: string | null): boolean {
   const expected = process.env.MILAIDY_API_TOKEN?.trim();
   if (!expected) return true;
-  const provided = extractAuthToken(req);
   if (!provided) return false;
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(provided, "utf8");
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
+}
+
+function extractWsAuthToken(
+  req: http.IncomingMessage,
+  wsUrl: URL,
+): string | null {
+  const headerToken = extractAuthToken(req);
+  if (headerToken) return headerToken;
+  const queryToken = wsUrl.searchParams.get("token");
+  if (typeof queryToken === "string" && queryToken.trim()) {
+    return queryToken.trim();
+  }
+  return null;
+}
+
+function isAuthorized(req: http.IncomingMessage): boolean {
+  return hasValidApiToken(extractAuthToken(req));
 }
 
 async function handleRequest(
@@ -6209,11 +6225,20 @@ export async function startApiServer(opts?: {
   // Handle upgrade requests for WebSocket
   server.on("upgrade", (request, socket, head) => {
     try {
-      const { pathname: wsPath } = new URL(
+      const wsUrl = new URL(
         request.url ?? "/",
-        `http://${request.headers.host}`,
+        `http://${request.headers.host ?? "localhost"}`,
       );
+      const wsPath = wsUrl.pathname;
       if (wsPath === "/ws") {
+        const providedToken = extractWsAuthToken(request, wsUrl);
+        if (!hasValidApiToken(providedToken)) {
+          socket.write(
+            "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n",
+          );
+          socket.destroy();
+          return;
+        }
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit("connection", ws, request);
         });
