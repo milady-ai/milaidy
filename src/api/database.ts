@@ -534,11 +534,13 @@ async function handleTestConnection(
     const pgModule = await import("pg");
     Pool = pgModule.default?.Pool ?? pgModule.Pool;
   } catch {
-    errorResponse(
-      res,
-      "PostgreSQL client library (pg) is not available. Ensure @elizaos/plugin-sql is installed.",
-      500,
-    );
+    jsonResponse(res, {
+      success: false,
+      serverVersion: null,
+      error:
+        "PostgreSQL client library (pg) is not available. Ensure @elizaos/plugin-sql is installed.",
+      durationMs: Date.now() - start,
+    } satisfies ConnectionTestResult);
     return;
   }
 
