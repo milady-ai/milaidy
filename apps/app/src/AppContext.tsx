@@ -71,6 +71,13 @@ export const THEMES: ReadonlyArray<{
 
 const VALID_THEMES = new Set<string>(THEMES.map((t) => t.id));
 
+function detectSystemTheme(): ThemeName {
+  try {
+    if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "milady";
+  } catch { /* ignore */ }
+  return "dark";
+}
+
 function loadTheme(): ThemeName {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -287,6 +294,7 @@ export interface AppState {
   onboardingProvider: string;
   onboardingApiKey: string;
   onboardingOpenRouterModel: string;
+  onboardingSubscriptionTab: "token" | "oauth";
   onboardingTelegramToken: string;
   onboardingDiscordToken: string;
   onboardingWhatsAppSessionPath: string;
@@ -605,6 +613,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [onboardingProvider, setOnboardingProvider] = useState("");
   const [onboardingApiKey, setOnboardingApiKey] = useState("");
   const [onboardingOpenRouterModel, setOnboardingOpenRouterModel] = useState("anthropic/claude-sonnet-4");
+  const [onboardingSubscriptionTab, setOnboardingSubscriptionTab] = useState<"token" | "oauth">("token");
   const [onboardingTelegramToken, setOnboardingTelegramToken] = useState("");
   const [onboardingDiscordToken, setOnboardingDiscordToken] = useState("");
   const [onboardingWhatsAppSessionPath, setOnboardingWhatsAppSessionPath] = useState("");
@@ -666,6 +675,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const actionNoticeTimer = useRef<number | null>(null);
   const cloudPollInterval = useRef<number | null>(null);
   const cloudLoginPollTimer = useRef<number | null>(null);
+  /** Timestamp of the most recent successful cloud login (prevents background poll from downgrading connected state). */
+  const cloudLoginAt = useRef<number>(0);
   const prevAgentStateRef = useRef<string | null>(null);
 
   // ── Action notice ──────────────────────────────────────────────────
@@ -896,7 +907,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const cloudStatus = await client.getCloudStatus().catch(() => null);
     if (!cloudStatus) return;
     setCloudEnabled(cloudStatus.enabled ?? false);
-    setCloudConnected(cloudStatus.connected);
+
+    // Grace period: after a successful login, don't let the background poll
+    // downgrade connected→disconnected for 30 seconds (CLOUD_AUTH service may
+    // lag behind the config write).
+    const inGracePeriod = Date.now() - cloudLoginAt.current < 30_000;
+    if (inGracePeriod && !cloudStatus.connected) {
+      // Don't overwrite — the login just succeeded and the server hasn't
+      // caught up yet. Keep the optimistic connected state.
+    } else {
+      setCloudConnected(cloudStatus.connected);
+    }
+
     setCloudUserId(cloudStatus.userId ?? null);
     if (cloudStatus.topUpUrl) setCloudTopUpUrl(cloudStatus.topUpUrl);
     if (cloudStatus.connected) {
@@ -993,16 +1015,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Chat ───────────────────────────────────────────────────────────
 
+  /** Request an agent greeting for a conversation and add it to messages. */
+  const fetchGreeting = useCallback(async (convId: string) => {
+    setChatSending(true);
+    try {
+      const data = await client.requestGreeting(convId);
+      if (data.text) {
+        setConversationMessages((prev: ConversationMessage[]) => [
+          ...prev,
+          { id: `greeting-${Date.now()}`, role: "assistant", text: data.text, timestamp: Date.now() },
+        ]);
+      }
+    } catch {
+      /* greeting failed silently — user can still chat */
+    } finally {
+      setChatSending(false);
+    }
+  }, []);
+
   const handleNewConversation = useCallback(async () => {
     try {
       const { conversation } = await client.createConversation();
       setConversations((prev) => [conversation, ...prev]);
       setActiveConversationId(conversation.id);
       setConversationMessages([]);
+      // Agent sends the first message
+      void fetchGreeting(conversation.id);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [fetchGreeting]);
 
   const handleChatSend = useCallback(async () => {
     const text = chatInput.trim();
@@ -1631,10 +1673,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const handleOnboardingFinish = useCallback(async () => {
     if (!onboardingOptions) return;
-    const style = onboardingOptions.styles.find((s: StylePreset) => s.catchphrase === onboardingStyle);
-    const systemPrompt = style?.system
-      ? style.system.replace(/\{\{name\}\}/g, onboardingName)
-      : `You are ${onboardingName}, an autonomous AI agent powered by ElizaOS. ${onboardingOptions.sharedStyleRules}`;
+
+    // Try to fetch archetype character data if an archetype was selected
+    let archetypeChar: any = null;
+    if (onboardingStyle === "__blended" && (window as any).__blendedCharacter) {
+      // Use blended character from multi-select blend
+      archetypeChar = (window as any).__blendedCharacter;
+      delete (window as any).__blendedCharacter;
+    } else if (onboardingStyle && onboardingStyle !== "custom") {
+      try {
+        const res = await fetch(`/api/archetypes/${onboardingStyle}`);
+        if (res.ok) {
+          const data = await res.json();
+          archetypeChar = data.character;
+        }
+      } catch { /* fall back to style presets */ }
+    }
+
+    // Fall back to legacy style presets if no archetype
+    const style = !archetypeChar
+      ? onboardingOptions.styles.find((s: StylePreset) => s.catchphrase === onboardingStyle)
+      : null;
+
+    const bio = archetypeChar?.bio ?? style?.bio ?? ["An autonomous AI agent."];
+    const systemPrompt = archetypeChar?.system
+      ? archetypeChar.system.replace(/\{\{name\}\}/g, onboardingName)
+      : style?.system
+        ? style.system.replace(/\{\{name\}\}/g, onboardingName)
+        : `You are ${onboardingName}, an autonomous AI agent powered by ElizaOS. ${onboardingOptions.sharedStyleRules}`;
 
     const inventoryProviders: Array<{ chain: string; rpcProvider: string; rpcApiKey?: string }> = [];
     if (onboardingRunMode === "local") {
@@ -1650,17 +1716,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name: onboardingName,
         theme: onboardingTheme,
         runMode: (onboardingRunMode || "local") as "local" | "cloud",
-        bio: style?.bio ?? ["An autonomous AI agent."],
+        bio,
         systemPrompt,
-        style: style?.style,
-        adjectives: style?.adjectives,
-        topics: style?.topics,
-        messageExamples: style?.messageExamples,
+        style: archetypeChar?.style ?? style?.style,
+        adjectives: archetypeChar?.adjectives ?? style?.adjectives,
+        topics: archetypeChar?.topics ?? style?.topics,
+        messageExamples: archetypeChar?.messageExamples ?? style?.messageExamples,
         cloudProvider: onboardingRunMode === "cloud" ? onboardingCloudProvider : undefined,
         smallModel: onboardingRunMode === "cloud" ? onboardingSmallModel : undefined,
         largeModel: onboardingRunMode === "cloud" ? onboardingLargeModel : undefined,
         provider: onboardingRunMode === "local" ? onboardingProvider || undefined : undefined,
         providerApiKey: onboardingRunMode === "local" ? onboardingApiKey || undefined : undefined,
+        subscriptionProvider: onboardingProvider === "anthropic-subscription" || onboardingProvider === "openai-subscription"
+          ? onboardingProvider : undefined,
         openrouterModel: onboardingRunMode === "local" && onboardingProvider === "openrouter" ? onboardingOpenRouterModel || undefined : undefined,
         inventoryProviders: inventoryProviders.length > 0 ? inventoryProviders : undefined,
         connectors: (() => {
@@ -1705,7 +1773,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onboardingOptions, onboardingStyle, onboardingName, onboardingTheme,
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel,
     onboardingLargeModel, onboardingProvider, onboardingApiKey,
-    onboardingOpenRouterModel, onboardingTelegramToken,
+    onboardingOpenRouterModel, onboardingSubscriptionTab, onboardingTelegramToken,
     onboardingDiscordToken, onboardingWhatsAppSessionPath,
     onboardingTwilioAccountSid, onboardingTwilioAuthToken, onboardingTwilioPhoneNumber,
     onboardingBlooioApiKey, onboardingBlooioPhoneNumber,
@@ -1735,12 +1803,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const poll = await client.cloudLoginPoll(resp.sessionId);
           if (poll.status === "authenticated") {
             if (cloudLoginPollTimer.current) clearInterval(cloudLoginPollTimer.current);
+            cloudLoginAt.current = Date.now();
             setCloudConnected(true);
             setCloudLoginBusy(false);
             setActionNotice("Logged in to Eliza Cloud successfully.", "success", 6000);
+            // Restart the 60-second background poll so it doesn't race with
+            // the delayed credit fetch below.
+            if (cloudPollInterval.current) clearInterval(cloudPollInterval.current);
+            cloudPollInterval.current = window.setInterval(() => pollCloudCredits(), 60_000);
             // Delay credit fetch to give backend time to reflect the new
             // auth state (config is saved but CLOUD_AUTH service may lag).
-            setTimeout(() => void pollCloudCredits(), 2000);
+            setTimeout(() => void pollCloudCredits(), 3000);
           } else if (poll.status === "expired" || poll.status === "error") {
             if (cloudLoginPollTimer.current) clearInterval(cloudLoginPollTimer.current);
             setCloudLoginError(poll.error ?? "Session expired. Please try again.");
@@ -1895,6 +1968,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       onboardingProvider: setOnboardingProvider as (v: never) => void,
       onboardingApiKey: setOnboardingApiKey as (v: never) => void,
       onboardingOpenRouterModel: setOnboardingOpenRouterModel as (v: never) => void,
+      onboardingSubscriptionTab: setOnboardingSubscriptionTab as (v: never) => void,
       onboardingTelegramToken: setOnboardingTelegramToken as (v: never) => void,
       onboardingDiscordToken: setOnboardingDiscordToken as (v: never) => void,
       onboardingWhatsAppSessionPath: setOnboardingWhatsAppSessionPath as (v: never) => void,
@@ -2001,7 +2075,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (authRequired) return;
 
-      // Load conversations
+      // Load conversations — if none exist, create one and request a greeting
+      let greetConvId: string | null = null;
       try {
         const { conversations: c } = await client.listConversations();
         setConversations(c);
@@ -2011,12 +2086,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { messages } = await client.getConversationMessages(latest.id);
             setConversationMessages(messages);
+            // If the latest conversation has no messages, queue a greeting
+            if (messages.length === 0) {
+              greetConvId = latest.id;
+            }
+          } catch {
+            /* ignore */
+          }
+        } else {
+          // First launch — create a conversation and greet
+          try {
+            const { conversation } = await client.createConversation();
+            setConversations([conversation]);
+            setActiveConversationId(conversation.id);
+            setConversationMessages([]);
+            greetConvId = conversation.id;
           } catch {
             /* ignore */
           }
         }
       } catch {
         /* ignore */
+      }
+
+      // Request agent greeting after status is loaded (so runtime is ready)
+      const doGreeting = async (convId: string) => {
+        // Wait briefly for the agent to be running before requesting greeting
+        let ready = false;
+        for (let i = 0; i < 10; i++) {
+          try {
+            const s = await client.getStatus();
+            if (s.state === "running") {
+              ready = true;
+              break;
+            }
+          } catch { /* keep trying */ }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        if (ready) {
+          setChatSending(true);
+          try {
+            const data = await client.requestGreeting(convId);
+            if (data.text) {
+              setConversationMessages((prev: ConversationMessage[]) => [
+                ...prev,
+                { id: `greeting-${Date.now()}`, role: "assistant", text: data.text, timestamp: Date.now() },
+              ]);
+            }
+          } catch { /* ignore */ }
+          setChatSending(false);
+        }
+      };
+      if (greetConvId) {
+        void doGreeting(greetConvId);
       }
 
       void loadWorkbench();
@@ -2134,7 +2256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     importBusy, importPassword, importFile, importError, importSuccess,
     onboardingStep, onboardingOptions, onboardingName, onboardingStyle, onboardingTheme,
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel, onboardingLargeModel,
-    onboardingProvider, onboardingApiKey, onboardingOpenRouterModel,
+    onboardingProvider, onboardingApiKey, onboardingOpenRouterModel, onboardingSubscriptionTab,
     onboardingTelegramToken,
     onboardingDiscordToken, onboardingWhatsAppSessionPath,
     onboardingTwilioAccountSid, onboardingTwilioAuthToken, onboardingTwilioPhoneNumber,

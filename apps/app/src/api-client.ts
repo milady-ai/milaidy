@@ -195,6 +195,7 @@ export interface OnboardingData {
   provider?: string;
   providerApiKey?: string;
   openrouterModel?: string;
+  subscriptionProvider?: string;
   // Messaging channel setup
   channels?: Record<string, unknown>;
   // Inventory / wallet setup
@@ -1391,6 +1392,12 @@ export class MilaidyClient {
     return this.fetch(`/api/conversations/${encodeURIComponent(id)}/messages`, {
       method: "POST",
       body: JSON.stringify({ text }),
+    });
+  }
+
+  async requestGreeting(id: string): Promise<{ text: string; agentName: string; generated: boolean }> {
+    return this.fetch(`/api/conversations/${encodeURIComponent(id)}/greeting`, {
+      method: "POST",
     });
   }
 

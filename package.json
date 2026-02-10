@@ -94,7 +94,7 @@
     "@elizaos/core": "next",
     "@elizaos/plugin-acp": "next",
     "@elizaos/plugin-agent-orchestrator": "next",
-    "@elizaos/plugin-agent-skills": "next",
+    "@elizaos/plugin-agent-skills": "2.0.0-alpha.5",
     "@elizaos/plugin-anthropic": "next",
     "@elizaos/plugin-bluebubbles": "next",
     "@elizaos/plugin-browser": "next",

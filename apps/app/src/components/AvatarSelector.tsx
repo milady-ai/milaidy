@@ -1,8 +1,8 @@
 /**
  * Reusable avatar/character VRM selector.
  *
- * Shows a grid of the 8 built-in milady VRMs with preview images,
- * plus an upload option for custom VRM files.
+ * Shows a single row of the 8 built-in milady VRMs as thumbnail images.
+ * The selected avatar gets a highlight ring. No text labels.
  */
 
 import { useRef } from "react";
@@ -17,8 +17,6 @@ export interface AvatarSelectorProps {
   onUpload?: (file: File) => void;
   /** Whether to show the upload option */
   showUpload?: boolean;
-  /** Optional label override */
-  label?: string;
 }
 
 export function AvatarSelector({
@@ -26,7 +24,6 @@ export function AvatarSelector({
   onSelect,
   onUpload,
   showUpload = true,
-  label,
 }: AvatarSelectorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,70 +42,53 @@ export function AvatarSelector({
 
   return (
     <div>
-      {label && (
-        <div className="text-[13px] font-bold text-txt-strong mb-3">{label}</div>
-      )}
-      <div className="grid grid-cols-8 gap-1.5">
+      <div className="flex gap-2">
         {avatarIndices.map((i) => (
           <button
             key={i}
-            className={`relative aspect-square border-[1.5px] cursor-pointer bg-card overflow-hidden transition-all rounded-md ${
+            className={`relative w-12 h-12 shrink-0 rounded-full overflow-hidden cursor-pointer transition-all ${
               selected === i
-                ? "border-accent shadow-[0_0_0_2px_var(--accent-subtle)] scale-[1.04]"
-                : "border-border hover:border-accent/50 hover:scale-[1.02]"
+                ? "ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--card)] scale-110"
+                : "opacity-60 hover:opacity-100 hover:scale-105"
             }`}
             onClick={() => onSelect(i)}
-            title={`Milady ${i}`}
+            type="button"
           >
             <img
               src={getVrmPreviewUrl(i)}
-              alt={`Milady ${i}`}
+              alt={`Avatar ${i}`}
               className="w-full h-full object-cover"
-              onError={(e) => {
-                const target = e.currentTarget;
-                target.style.display = "none";
-                const parent = target.parentElement;
-                if (parent && !parent.querySelector(".fallback")) {
-                  const fallback = document.createElement("div");
-                  fallback.className = "fallback absolute inset-0 flex items-center justify-center text-muted text-xs";
-                  fallback.textContent = `${i}`;
-                  parent.appendChild(fallback);
-                }
-              }}
             />
-            {selected === i && (
-              <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-accent rounded-full flex items-center justify-center">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              </div>
-            )}
           </button>
         ))}
-      </div>
 
-      {/* Upload custom VRM */}
-      {showUpload && (
-        <div className="mt-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".vrm"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          <button
-            className={`w-full py-2.5 border-2 border-dashed cursor-pointer transition-all rounded-lg text-sm ${
-              selected === 0
-                ? "border-accent bg-accent-subtle text-accent"
-                : "border-border text-muted hover:border-accent/50 hover:text-txt"
-            }`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {selected === 0 ? "Custom VRM uploaded" : "Upload custom .vrm file"}
-          </button>
-        </div>
-      )}
+        {/* Upload custom VRM */}
+        {showUpload && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".vrm"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              className={`w-12 h-12 shrink-0 rounded-full border-2 border-dashed flex items-center justify-center cursor-pointer transition-all ${
+                selected === 0
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)] ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--card)] scale-110"
+                  : "border-[var(--border)] text-[var(--muted)] opacity-60 hover:opacity-100 hover:border-[var(--accent)] hover:scale-105"
+              }`}
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload custom .vrm"
+              type="button"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14m-7-7h14" />
+              </svg>
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

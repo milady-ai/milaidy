@@ -183,7 +183,7 @@ export function ChatView() {
 
       {/* ── Messages ───────────────────────────────────────────────── */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto py-2 relative" style={{ zIndex: 1 }}>
-        {msgs.length === 0 ? (
+        {msgs.length === 0 && !chatSending ? (
           <div className="text-center py-10 text-muted italic">
             Send a message to start chatting.
           </div>

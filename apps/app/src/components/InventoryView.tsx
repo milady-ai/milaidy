@@ -64,6 +64,7 @@ export function InventoryView() {
     loadBalances,
     loadNfts,
     handleWalletApiKeySave,
+    cloudConnected,
     setTab,
     setState,
   } = useApp();
@@ -75,9 +76,10 @@ export function InventoryView() {
   });
 
   // ── Setup detection ──────────────────────────────────────────────────
+  // If connected to Eliza Cloud, RPCs are managed — no local keys needed.
 
   const cfg = walletConfig;
-  const needsSetup = !cfg || (!cfg.alchemyKeySet && !cfg.heliusKeySet);
+  const needsSetup = !cloudConnected && (!cfg || (!cfg.alchemyKeySet && !cfg.heliusKeySet));
 
   // ── Flatten & sort token rows (skip errored chains) ────────────────
 
@@ -222,163 +224,18 @@ export function InventoryView() {
 
   function renderSetup() {
     return (
-      <div className="mt-4">
-        {/* ── EVM Section ─────────────────────────────────────────────── */}
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="inline-block w-5 h-5 rounded-full text-center leading-5 text-[10px] font-bold font-mono text-white bg-chain-eth">
-              E
-            </span>
-            <h3 className="text-[15px] font-bold text-txt-strong">EVM</h3>
-          </div>
-
-          {/* Alchemy */}
-          <div className="border border-border bg-card p-5">
-            <h4 className="text-sm mb-2">
-              Alchemy
-              {cfg?.alchemyKeySet && (
-                <span className="text-ok text-xs font-normal ml-2">configured</span>
-              )}
-            </h4>
-            <p className="text-xs text-muted mb-3 leading-relaxed">
-              Alchemy provides EVM chain data (Ethereum, Base, Arbitrum, Optimism, Polygon).
-            </p>
-            <ol className="mb-3.5 pl-5 text-xs text-muted list-decimal" style={{ lineHeight: 1.7 }}>
-              <li>
-                Go to{" "}
-                <a href="https://dashboard.alchemy.com/signup" target="_blank" rel="noopener" className="text-accent">
-                  dashboard.alchemy.com
-                </a>{" "}
-                and create a free account
-              </li>
-              <li>
-                Create an app, then go to its <strong>Networks</strong> tab and enable: Ethereum, Base,
-                Arbitrum, Optimism, Polygon
-              </li>
-              <li>
-                Copy the <strong>API Key</strong> from your app settings
-              </li>
-              <li>Paste it below</li>
-            </ol>
-            <div className="flex gap-2 items-center">
-              <input
-                type="password"
-                className="flex-1 px-2.5 py-1.5 border border-border bg-bg text-xs font-mono"
-                placeholder={cfg?.alchemyKeySet ? "Already set \u2014 leave blank to keep" : "Paste your Alchemy API key"}
-                value={apiKeyInputs.alchemy}
-                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, alchemy: e.target.value }))}
-              />
-              <button
-                className="px-3 py-1.5 border border-border bg-bg text-txt cursor-pointer text-xs font-mono hover:border-accent hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                onClick={() => handleSaveKey("alchemy")}
-                disabled={savingKey !== null || !apiKeyInputs.alchemy.trim()}
-              >
-                {savingKey === "alchemy" ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Solana Section ──────────────────────────────────────────── */}
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="inline-block w-5 h-5 rounded-full text-center leading-5 text-[10px] font-bold font-mono text-white bg-chain-sol">
-              S
-            </span>
-            <h3 className="text-[15px] font-bold text-txt-strong">Solana</h3>
-          </div>
-
-          {/* Helius */}
-          <div className="border border-border bg-card p-5">
-            <h4 className="text-sm mb-2">
-              Helius
-              {cfg?.heliusKeySet && (
-                <span className="text-ok text-xs font-normal ml-2">configured</span>
-              )}
-            </h4>
-            <p className="text-xs text-muted mb-3 leading-relaxed">
-              Helius provides Solana chain data (tokens, NFTs, enhanced RPC).
-            </p>
-            <ol className="mb-3.5 pl-5 text-xs text-muted list-decimal" style={{ lineHeight: 1.7 }}>
-              <li>
-                Go to{" "}
-                <a href="https://dev.helius.xyz/dashboard/app" target="_blank" rel="noopener" className="text-accent">
-                  dev.helius.xyz
-                </a>{" "}
-                and create a free account
-              </li>
-              <li>You&apos;ll get an API key on your dashboard immediately</li>
-              <li>
-                Copy the <strong>API Key</strong>
-              </li>
-              <li>Paste it below</li>
-            </ol>
-            <div className="flex gap-2 items-center">
-              <input
-                type="password"
-                className="flex-1 px-2.5 py-1.5 border border-border bg-bg text-xs font-mono"
-                placeholder={cfg?.heliusKeySet ? "Already set \u2014 leave blank to keep" : "Paste your Helius API key"}
-                value={apiKeyInputs.helius}
-                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, helius: e.target.value }))}
-              />
-              <button
-                className="px-3 py-1.5 border border-border bg-bg text-txt cursor-pointer text-xs font-mono hover:border-accent hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                onClick={() => handleSaveKey("helius")}
-                disabled={savingKey !== null || !apiKeyInputs.helius.trim()}
-              >
-                {savingKey === "helius" ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-
-          {/* Birdeye (optional) */}
-          <div className="border border-border border-t-0 bg-card p-5">
-            <h4 className="text-sm mb-2">
-              Birdeye{" "}
-              <span className="text-muted text-[11px] font-normal ml-2">optional</span>
-              {cfg?.birdeyeKeySet && (
-                <span className="text-ok text-xs font-normal ml-2">configured</span>
-              )}
-            </h4>
-            <p className="text-xs text-muted mb-3 leading-relaxed">
-              Birdeye provides USD price data for Solana tokens. Optional but recommended.
-            </p>
-            <ol className="mb-3.5 pl-5 text-xs text-muted list-decimal" style={{ lineHeight: 1.7 }}>
-              <li>
-                Go to{" "}
-                <a href="https://birdeye.so/user/api-management" target="_blank" rel="noopener" className="text-accent">
-                  birdeye.so
-                </a>{" "}
-                and create a free account
-              </li>
-              <li>
-                Navigate to the <strong>API</strong> section in your profile
-              </li>
-              <li>Copy your API key</li>
-            </ol>
-            <div className="flex gap-2 items-center">
-              <input
-                type="password"
-                className="flex-1 px-2.5 py-1.5 border border-border bg-bg text-xs font-mono"
-                placeholder={
-                  cfg?.birdeyeKeySet
-                    ? "Already set \u2014 leave blank to keep"
-                    : "Paste your Birdeye API key (optional)"
-                }
-                value={apiKeyInputs.birdeye}
-                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, birdeye: e.target.value }))}
-              />
-              <button
-                className="px-3 py-1.5 border border-border bg-bg text-txt cursor-pointer text-xs font-mono hover:border-accent hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                onClick={() => handleSaveKey("birdeye")}
-                disabled={savingKey !== null || !apiKeyInputs.birdeye.trim()}
-              >
-                {savingKey === "birdeye" ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-
+      <div className="mt-6 border border-border bg-card p-6 text-center">
+        <div className="text-sm font-bold mb-2">Wallet keys not configured</div>
+        <p className="text-xs text-muted mb-4 leading-relaxed max-w-md mx-auto">
+          To view balances and NFTs you need RPC provider keys (Alchemy, Helius, etc.)
+          or an Eliza Cloud connection. Head to <strong>Config</strong> to set them up.
+        </p>
+        <button
+          className="px-4 py-1.5 border border-accent bg-accent text-accent-fg cursor-pointer text-xs font-mono hover:bg-accent-hover hover:border-accent-hover"
+          onClick={() => setTab("config")}
+        >
+          Open Config
+        </button>
       </div>
     );
   }
@@ -474,16 +331,16 @@ export function InventoryView() {
     if (sortedRows.length === 0) {
       return (
         <div className="text-center py-10 text-muted italic mt-6">
-          No wallet data available. Make sure API keys are configured in{" "}
+          No wallet data available. Make sure RPC keys are configured in{" "}
           <a
-            href="/admin"
+            href="/config"
             onClick={(e) => {
               e.preventDefault();
-              setTab("admin");
+              setTab("config");
             }}
             className="text-accent"
           >
-            Admin
+            Config
           </a>
           .
         </div>

@@ -8,6 +8,8 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import os from "node:os";
 import http from "node:http";
 import path from "node:path";
 import {
@@ -2180,6 +2182,174 @@ async function handleRequest(
     return;
   }
 
+  // ── GET /api/archetypes ───────────────────────────────────────────────
+  if (method === "GET" && pathname === "/api/archetypes") {
+    const { getArchetypeList } = await import("../archetypes/index.js");
+    json(res, { archetypes: getArchetypeList() });
+    return;
+  }
+
+  // ── GET /api/archetypes/:id ─────────────────────────────────────────
+  if (method === "GET" && pathname.startsWith("/api/archetypes/")) {
+    const id = pathname.slice("/api/archetypes/".length);
+    const { getArchetype } = await import("../archetypes/index.js");
+    const archetype = getArchetype(id);
+    if (!archetype) {
+      error(res, "Archetype not found", 404);
+      return;
+    }
+    json(res, archetype);
+    return;
+  }
+
+  // ── POST /api/archetypes/blend ────────────────────────────────────────
+  if (method === "POST" && pathname === "/api/archetypes/blend") {
+    const body = await readJsonBody<{ ids: string[]; name?: string }>(req, res);
+    if (!body) return;
+
+    const { ids, name } = body;
+    if (!Array.isArray(ids) || ids.length < 2) {
+      error(res, "provide at least 2 archetype ids to blend", 400);
+      return;
+    }
+
+    const { getArchetype } = await import("../archetypes/index.js");
+    const selected = ids.map((id) => getArchetype(id)).filter(Boolean);
+    if (selected.length < 2) {
+      error(res, "one or more archetype ids not found", 404);
+      return;
+    }
+
+    const rt = state.runtime;
+    if (!rt) {
+      error(res, "agent runtime not available. start the agent first.", 503);
+      return;
+    }
+
+    const archetypeSummaries = selected
+      .map((a) => {
+        const c = a!.character;
+        return `## ${a!.name}\nBio: ${c.bio.join(" | ")}\nSoul: ${c.system.slice(0, 500)}\nStyle: ${c.style.all.join("; ")}\nAdjectives: ${c.adjectives.join(", ")}\nTopics: ${c.topics.join(", ")}`;
+      })
+      .join("\n\n");
+
+    const agentName = name || "{{name}}";
+
+    const prompt = `you are creating a blended AI character by combining multiple archetypes into one coherent person.
+
+here are the archetypes to blend:
+
+${archetypeSummaries}
+
+create a single merged character that takes the best traits from each. the result should feel like one person, not a frankenstein of parts.
+
+rules:
+- all lowercase, always
+- never use emojis, ever
+- write the system prompt in first person AS the character, not about them
+- include: inner life, vulnerability, boundaries, growth
+- no filler phrases, no sycophancy, no corporate speak
+- the character name is "${agentName}" — use {{name}} as placeholder
+
+output ONLY valid JSON with this exact structure (no markdown, no backticks):
+{
+  "bio": ["line 1", "line 2", "line 3", "line 4"],
+  "system": "first person system prompt...",
+  "style": {
+    "all": ["rule 1", "rule 2"],
+    "chat": ["rule 1", "rule 2"],
+    "post": ["rule 1", "rule 2"]
+  },
+  "adjectives": ["adj1", "adj2", "adj3"],
+  "topics": ["topic1", "topic2", "topic3"],
+  "messageExamples": [
+    [
+      {"user": "{{user1}}", "content": {"text": "user message"}},
+      {"user": "{{agentName}}", "content": {"text": "agent response"}}
+    ]
+  ]
+}`;
+
+    try {
+      const { ModelType } = await import("@elizaos/core");
+      let result: string | undefined;
+      for (const model of [ModelType.TEXT_SMALL, ModelType.TEXT_LARGE]) {
+        try {
+          result = String(await rt.useModel(model, { prompt, temperature: 0.8, maxTokens: 4000 }));
+          break;
+        } catch (modelErr) {
+          const modelMsg = modelErr instanceof Error ? modelErr.message : "";
+          if (/api.?key|missing|unauthorized|authentication/i.test(modelMsg) && model === ModelType.TEXT_SMALL) {
+            continue;
+          }
+          throw modelErr;
+        }
+      }
+
+      if (!result) {
+        error(res, "no AI model provider configured", 503);
+        return;
+      }
+
+      // Extract JSON from response (strip markdown fences if present)
+      let cleaned = result.trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+      }
+
+      try {
+        const character = JSON.parse(cleaned);
+        json(res, { character, archetypes: ids });
+      } catch {
+        // Return raw if parse fails — client can handle it
+        json(res, { raw: cleaned, archetypes: ids });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "blend failed";
+      logger.error(`[archetypes-blend] ${msg}`);
+      error(res, msg, 500);
+    }
+    return;
+  }
+
+  // ── POST /api/memories/import ───────────────────────────────────────
+  if (method === "POST" && pathname === "/api/memories/import") {
+    const body = await readJsonBody<{
+      source: "chatgpt" | "claude" | "freeform";
+      content: string;
+    }>(req, res);
+    if (!body) return;
+
+    if (!body.source || !body.content?.trim()) {
+      error(res, "source and content are required", 400);
+      return;
+    }
+
+    try {
+      const workspaceDir =
+        state.config.agents?.defaults?.workspace ||
+        path.join(os.homedir(), ".milaidy", "workspace");
+      const importDir = path.join(workspaceDir, "imported");
+      await fsPromises.mkdir(importDir, { recursive: true });
+
+      const filename = `${body.source}-memories.md`;
+      const filepath = path.join(importDir, filename);
+      const header = `# Imported Memories (${body.source})\n\n*Imported at ${new Date().toISOString()}*\n\n`;
+      await fsPromises.writeFile(filepath, header + body.content.trim() + "\n", "utf-8");
+
+      const lines = body.content.trim().split("\n").filter((l) => l.trim());
+      json(res, {
+        success: true,
+        memoriesCount: lines.length,
+        file: filename,
+        preview: lines.slice(0, 3).join("\n"),
+      });
+    } catch (err) {
+      error(res, `Memory import failed: ${err}`, 500);
+    }
+    return;
+  }
+
   // ── GET /api/onboarding/status ──────────────────────────────────────────
   if (method === "GET" && pathname === "/api/onboarding/status") {
     const complete = configFileExists() && Boolean(state.config.agents);
@@ -2315,6 +2485,17 @@ async function handleRequest(
       if (!config.agents.defaults) config.agents.defaults = {};
       (config.agents.defaults as Record<string, unknown>).subscriptionProvider =
         body.provider;
+
+      // Default model for OpenAI subscription → Codex 5.3
+      if (body.provider === "openai-subscription") {
+        const agentEntry = config.agents?.list?.[0] as
+          | Record<string, unknown>
+          | undefined;
+        if (agentEntry) {
+          agentEntry.model = "gpt-5.3-codex";
+        }
+      }
+
       logger.info(
         `[milaidy-api] Subscription provider selected: ${body.provider} — complete OAuth via /api/subscription/ endpoints`,
       );
@@ -5142,6 +5323,132 @@ async function handleRequest(
     } catch (err) {
       const msg = err instanceof Error ? err.message : "generation failed";
       error(res, msg, 500);
+    }
+    return;
+  }
+
+  // ── POST /api/conversations/:id/greeting ───────────────────────────
+  // Ask the agent to generate an opening greeting message for a conversation.
+  // If the LLM is not configured or fails, returns a fallback message.
+  if (
+    method === "POST" &&
+    /^\/api\/conversations\/[^/]+\/greeting$/.test(pathname)
+  ) {
+    const convId = decodeURIComponent(pathname.split("/")[3]);
+    const conv = state.conversations.get(convId);
+    if (!conv) {
+      error(res, "Conversation not found", 404);
+      return;
+    }
+
+    const FALLBACK_MSG = "please configure your models so we can chat";
+
+    const runtime = state.runtime;
+    if (!runtime) {
+      json(res, { text: FALLBACK_MSG, agentName: state.agentName, generated: false });
+      return;
+    }
+
+    // Cloud proxy path — ask the cloud to generate a greeting
+    const proxy = state.cloudManager?.getProxy();
+    if (proxy) {
+      try {
+        const responseText = await proxy.handleChatMessage(
+          "[system: send a short greeting to open the conversation. introduce yourself briefly in your own style.]",
+        );
+        conv.updatedAt = new Date().toISOString();
+        json(res, { text: responseText, agentName: proxy.agentName, generated: true });
+      } catch {
+        json(res, { text: FALLBACK_MSG, agentName: proxy.agentName, generated: false });
+      }
+      return;
+    }
+
+    // Local LLM path — build a prompt from the agent's character
+    try {
+      const { ModelType } = await import("@elizaos/core");
+      const char = runtime.character;
+      const charName = char.name ?? state.agentName ?? "Milaidy";
+      const bio = Array.isArray(char.bio)
+        ? char.bio.join(" ")
+        : typeof char.bio === "string"
+          ? char.bio
+          : "";
+      const chatStyle = Array.isArray(char.style?.chat)
+        ? char.style.chat.join("; ")
+        : "";
+      const allStyle = Array.isArray(char.style?.all)
+        ? char.style.all.join("; ")
+        : "";
+
+      const prompt = [
+        `You are ${charName}.`,
+        bio ? `About you: ${bio}` : "",
+        char.system ? `${char.system}` : "",
+        chatStyle ? `Your chat style: ${chatStyle}` : "",
+        allStyle ? `General style rules: ${allStyle}` : "",
+        "",
+        "Write a short, natural opening message to greet someone who just started a conversation with you.",
+        "Be yourself — use your own voice, personality, and style.",
+        "Keep it brief (1-2 sentences). Do not use quotation marks around your message.",
+        "Just output the greeting, nothing else.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      let result: string | undefined;
+      for (const model of [ModelType.TEXT_SMALL, ModelType.TEXT_LARGE]) {
+        try {
+          result = String(
+            await runtime.useModel(model, {
+              prompt,
+              temperature: 0.9,
+              maxTokens: 200,
+            }),
+          );
+          break;
+        } catch (modelErr) {
+          const modelMsg =
+            modelErr instanceof Error ? modelErr.message : "";
+          if (
+            /api.?key|missing|unauthorized|authentication/i.test(modelMsg) &&
+            model === ModelType.TEXT_SMALL
+          ) {
+            continue;
+          }
+          throw modelErr;
+        }
+      }
+
+      if (!result?.trim()) {
+        json(res, { text: FALLBACK_MSG, agentName: charName, generated: false });
+        return;
+      }
+
+      // Store the greeting as a message memory in the conversation room
+      try {
+        await ensureConversationRoom(conv);
+        const agentMemory = createMessageMemory({
+          id: crypto.randomUUID() as UUID,
+          entityId: runtime.agentId,
+          roomId: conv.roomId,
+          content: {
+            text: result.trim(),
+            source: "agent_greeting",
+            channelType: ChannelType.DM,
+          },
+        });
+        await runtime.createMemory(agentMemory, "messages");
+      } catch (memErr) {
+        logger.warn(
+          `[greeting] Failed to store greeting memory: ${memErr instanceof Error ? memErr.message : String(memErr)}`,
+        );
+      }
+
+      conv.updatedAt = new Date().toISOString();
+      json(res, { text: result.trim(), agentName: charName, generated: true });
+    } catch {
+      json(res, { text: FALLBACK_MSG, agentName: state.agentName, generated: false });
     }
     return;
   }
