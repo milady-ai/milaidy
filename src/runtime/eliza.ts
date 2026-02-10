@@ -9,11 +9,13 @@
  */
 import crypto from "node:crypto";
 import type { Dirent } from "node:fs";
+import { existsSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import * as readline from "node:readline";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as clack from "@clack/prompts";
 import {
   AgentRuntime,
@@ -462,6 +464,68 @@ export function mergeDropInPlugins(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Browser server pre-flight
+// ---------------------------------------------------------------------------
+
+/**
+ * The `@elizaos/plugin-browser` npm package expects a `dist/server/` directory
+ * containing the compiled stagehand-server, but the npm publish doesn't include
+ * it.  The actual source/build lives in the workspace at
+ * `plugins/plugin-browser/stagehand-server/`.
+ *
+ * This function checks whether the server is reachable from the installed
+ * package and, if not, creates a symlink so the plugin's process-manager can
+ * find it.  Returns `true` when the server index.js is available (or was made
+ * available via symlink), `false` otherwise.
+ */
+export function ensureBrowserServerLink(): boolean {
+  try {
+    // Resolve the plugin-browser package root via its package.json.
+    const req = createRequire(import.meta.url);
+    const pkgJsonPath = req.resolve("@elizaos/plugin-browser/package.json");
+    const pluginRoot = path.dirname(pkgJsonPath);
+    const serverDir = path.join(pluginRoot, "dist", "server");
+    const serverIndex = path.join(serverDir, "dist", "index.js");
+
+    // Already linked / available — nothing to do.
+    if (existsSync(serverIndex)) return true;
+
+    // Walk upward from this file to find the eliza-workspace root.
+    // Layout: <workspace>/milaidy/src/runtime/eliza.ts
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const milaidyRoot = path.resolve(thisDir, "..", "..");
+    const workspaceRoot = path.resolve(milaidyRoot, "..");
+    const stagehandDir = path.join(
+      workspaceRoot,
+      "plugins",
+      "plugin-browser",
+      "stagehand-server",
+    );
+    const stagehandIndex = path.join(stagehandDir, "dist", "index.js");
+
+    if (!existsSync(stagehandIndex)) {
+      logger.info(
+        `[milaidy] Browser server not found at ${stagehandDir} — ` +
+          `@elizaos/plugin-browser will not be loaded`,
+      );
+      return false;
+    }
+
+    // Create symlink: dist/server -> stagehand-server
+    symlinkSync(stagehandDir, serverDir, "dir");
+    logger.info(
+      `[milaidy] Linked browser server: ${serverDir} -> ${stagehandDir}`,
+    );
+    return true;
+  } catch (err) {
+    logger.debug(
+      `[milaidy] Could not link browser server: ${formatError(err)}`,
+    );
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Plugin resolution
 // ---------------------------------------------------------------------------
 
@@ -531,6 +595,21 @@ async function resolvePlugins(
   for (const pluginName of pluginsToLoad) {
     const isCore = corePluginSet.has(pluginName);
     const installRecord = installRecords[pluginName];
+
+    // Pre-flight: ensure native dependencies are available for special plugins.
+    if (pluginName === "@elizaos/plugin-browser") {
+      if (!ensureBrowserServerLink()) {
+        failedPlugins.push({
+          name: pluginName,
+          error: "browser server binary not found",
+        });
+        logger.warn(
+          `[milaidy] Skipping ${pluginName}: browser server not available. ` +
+            `Build the stagehand-server or remove the plugin from plugins.allow.`,
+        );
+        continue;
+      }
+    }
 
     try {
       let mod: PluginModuleShape;
