@@ -73,6 +73,13 @@ export const THEMES: ReadonlyArray<{
 
 const VALID_THEMES = new Set<string>(THEMES.map((t) => t.id));
 
+function detectSystemTheme(): ThemeName {
+  try {
+    if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "milady";
+  } catch { /* ignore */ }
+  return "dark";
+}
+
 function loadTheme(): ThemeName {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -80,7 +87,7 @@ function loadTheme(): ThemeName {
   } catch {
     /* ignore */
   }
-  return "dark";
+  return detectSystemTheme();
 }
 
 function applyTheme(name: ThemeName) {
@@ -289,6 +296,7 @@ export interface AppState {
   onboardingProvider: string;
   onboardingApiKey: string;
   onboardingOpenRouterModel: string;
+  onboardingSubscriptionTab: "token" | "oauth";
   onboardingTelegramToken: string;
   onboardingSelectedChains: Set<string>;
   onboardingRpcSelections: Record<string, string>;
@@ -592,7 +600,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions | null>(null);
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingStyle, setOnboardingStyle] = useState("");
-  const [onboardingTheme, setOnboardingTheme] = useState<ThemeName>("dark");
+  const [onboardingTheme, setOnboardingTheme] = useState<ThemeName>(detectSystemTheme);
   const [onboardingRunMode, setOnboardingRunMode] = useState<"local" | "cloud" | "">("");
   const [onboardingCloudProvider, setOnboardingCloudProvider] = useState("");
   const [onboardingSmallModel, setOnboardingSmallModel] = useState("claude-haiku");
@@ -600,6 +608,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [onboardingProvider, setOnboardingProvider] = useState("");
   const [onboardingApiKey, setOnboardingApiKey] = useState("");
   const [onboardingOpenRouterModel, setOnboardingOpenRouterModel] = useState("anthropic/claude-sonnet-4");
+  const [onboardingSubscriptionTab, setOnboardingSubscriptionTab] = useState<"token" | "oauth">("token");
   const [onboardingTelegramToken, setOnboardingTelegramToken] = useState("");
   const [onboardingSelectedChains, setOnboardingSelectedChains] = useState<Set<string>>(new Set(["evm", "solana"]));
   const [onboardingRpcSelections, setOnboardingRpcSelections] = useState<Record<string, string>>({});
@@ -1649,6 +1658,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         largeModel: onboardingRunMode === "cloud" ? onboardingLargeModel : undefined,
         provider: onboardingRunMode === "local" ? onboardingProvider || undefined : undefined,
         providerApiKey: onboardingRunMode === "local" ? onboardingApiKey || undefined : undefined,
+        subscriptionProvider: onboardingProvider === "anthropic-subscription" || onboardingProvider === "openai-subscription"
+          ? onboardingProvider : undefined,
         openrouterModel: onboardingRunMode === "local" && onboardingProvider === "openrouter" ? onboardingOpenRouterModel || undefined : undefined,
         inventoryProviders: inventoryProviders.length > 0 ? inventoryProviders : undefined,
         connectors: onboardingTelegramToken.trim()
@@ -1670,7 +1681,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onboardingOptions, onboardingStyle, onboardingName, onboardingTheme,
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel,
     onboardingLargeModel, onboardingProvider, onboardingApiKey,
-    onboardingOpenRouterModel, onboardingTelegramToken,
+    onboardingOpenRouterModel, onboardingSubscriptionTab, onboardingTelegramToken,
     onboardingSelectedChains, onboardingRpcSelections, onboardingRpcKeys,
   ]);
 
@@ -1854,6 +1865,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       onboardingProvider: setOnboardingProvider as (v: never) => void,
       onboardingApiKey: setOnboardingApiKey as (v: never) => void,
       onboardingOpenRouterModel: setOnboardingOpenRouterModel as (v: never) => void,
+      onboardingSubscriptionTab: setOnboardingSubscriptionTab as (v: never) => void,
       onboardingTelegramToken: setOnboardingTelegramToken as (v: never) => void,
       onboardingSelectedChains: setOnboardingSelectedChains as (v: never) => void,
       onboardingRpcSelections: setOnboardingRpcSelections as (v: never) => void,
@@ -2084,7 +2096,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     importBusy, importPassword, importFile, importError, importSuccess,
     onboardingStep, onboardingOptions, onboardingName, onboardingStyle, onboardingTheme,
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel, onboardingLargeModel,
-    onboardingProvider, onboardingApiKey, onboardingOpenRouterModel,
+    onboardingProvider, onboardingApiKey, onboardingOpenRouterModel, onboardingSubscriptionTab,
     onboardingTelegramToken,
     onboardingSelectedChains, onboardingRpcSelections, onboardingRpcKeys, onboardingAvatar, onboardingRestarting,
     commandPaletteOpen, commandQuery, commandActiveIndex,

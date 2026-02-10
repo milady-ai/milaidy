@@ -5,8 +5,9 @@
 
 const PROVIDER_LOGO_MAP_DARK: Record<string, string> = {
   openai: "/logos/openai-icon-white.png",
-  anthropic: "/logos/claude-icon.png", // Anthropic API Key uses Claude logo
-  "anthropic-subscription": "/logos/anthropic-icon-white.png", // Anthropic Subscription
+  anthropic: "/logos/anthropic-icon-white.png", // Anthropic API Key
+  "anthropic-subscription": "/logos/claude-icon.png", // Claude Subscription
+  "openai-subscription": "/logos/openai-icon-white.png", // ChatGPT Subscription
   groq: "/logos/groq-icon-white.png",
   google: "/logos/gemini-icon.png",
   gemini: "/logos/gemini-icon.png",
@@ -25,8 +26,9 @@ const PROVIDER_LOGO_MAP_DARK: Record<string, string> = {
 
 const PROVIDER_LOGO_MAP_LIGHT: Record<string, string> = {
   openai: "/logos/openai-icon.png",
-  anthropic: "/logos/claude-icon.png", // Anthropic API Key uses Claude logo
-  "anthropic-subscription": "/logos/anthropic-icon.png", // Anthropic Subscription
+  anthropic: "/logos/anthropic-icon.png", // Anthropic API Key
+  "anthropic-subscription": "/logos/claude-icon.png", // Claude Subscription
+  "openai-subscription": "/logos/openai-icon.png", // ChatGPT Subscription
   groq: "/logos/groq-icon.png",
   google: "/logos/gemini-icon.png",
   gemini: "/logos/gemini-icon.png",
