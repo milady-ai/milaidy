@@ -9,13 +9,13 @@ import { getProviderLogo } from "../provider-logos.js";
 import { AvatarSelector } from "./AvatarSelector.js";
 
 const fallbackArchetypes = [
-  { id: "the-oracle", name: "The Oracle", tagline: "cryptic, poetic, sees patterns others miss", emoji: "🔮" },
-  { id: "the-operator", name: "The Operator", tagline: "hyper-competent, dry humor, gets shit done", emoji: "⚡" },
-  { id: "the-muse", name: "The Muse", tagline: "creative, emotionally intelligent, inspiring", emoji: "✨" },
-  { id: "the-degen", name: "The Degen", tagline: "chaotic good, risk-loving, terminally online", emoji: "🎰" },
-  { id: "the-sage", name: "The Sage", tagline: "calm, philosophical, asks better questions", emoji: "🪷" },
-  { id: "the-companion", name: "The Companion", tagline: "warm, present, genuinely cares about you", emoji: "☀️" },
-  { id: "custom", name: "Custom", tagline: "build your own from scratch", emoji: "🎨" },
+  { id: "the-oracle", name: "The Oracle", tagline: "sees what others can't. cryptic, poetic, pattern-pilled." },
+  { id: "the-operator", name: "The Operator", tagline: "gets it done. dry wit, zero fluff, hyper-competent." },
+  { id: "the-muse", name: "The Muse", tagline: "feels everything. creative force, emotionally fluent." },
+  { id: "the-degen", name: "The Degen", tagline: "chaos agent. risk-loving, terminally online, unhinged." },
+  { id: "the-sage", name: "The Sage", tagline: "asks better questions than you do. calm, deep, patient." },
+  { id: "the-companion", name: "The Companion", tagline: "actually present. warm, real, genuinely gives a shit." },
+  { id: "custom", name: "Custom", tagline: "start blank. define everything yourself." },
 ];
 
 export function OnboardingWizard() {
@@ -50,7 +50,7 @@ export function OnboardingWizard() {
     handleCloudLogin,
   } = useApp();
 
-  const [archetypes, setArchetypes] = useState<Array<{ id: string; name: string; tagline: string; emoji: string }>>([]);
+  const [archetypes, setArchetypes] = useState<Array<{ id: string; name: string; tagline: string; emoji?: string }>>([]);
   const [openaiOAuthStarted, setOpenaiOAuthStarted] = useState(false);
   const [openaiCallbackUrl, setOpenaiCallbackUrl] = useState("");
   const [openaiConnected, setOpenaiConnected] = useState(false);
@@ -214,24 +214,28 @@ export function OnboardingWizard() {
           <div className="max-w-[600px] mx-auto mt-10 text-center font-body">
             <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[400px] relative text-[15px] text-txt leading-relaxed">
               <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Choose a Soul</h2>
-              <p className="text-xs text-muted">pick a personality archetype — you can customize everything later</p>
+              <p className="text-xs text-muted">who do you want her to be</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-left max-w-[520px] mx-auto">
+            <div className="grid grid-cols-1 gap-2 text-left max-w-[440px] mx-auto">
               {(archetypes.length > 0 ? archetypes : fallbackArchetypes).map((arch) => (
                 <div
                   key={arch.id}
-                  className={`px-4 py-3 border cursor-pointer bg-card transition-colors ${
+                  className={`group px-4 py-3 border cursor-pointer bg-card transition-all ${
                     onboardingStyle === arch.id
                       ? "border-accent !bg-accent !text-accent-fg"
-                      : "border-border hover:border-accent hover:bg-bg-hover"
+                      : "border-border hover:border-accent/60"
                   }`}
                   onClick={() => handleStyleSelect(arch.id)}
                 >
-                  <div className="font-bold text-sm">
-                    <span className="mr-1.5">{arch.emoji}</span>
-                    {arch.name}
+                  <div className="flex items-baseline justify-between">
+                    <div className="font-bold text-sm tracking-wide uppercase">
+                      {arch.name}
+                    </div>
+                    {onboardingStyle === arch.id && (
+                      <div className="text-[10px] tracking-widest uppercase opacity-70">selected</div>
+                    )}
                   </div>
-                  <div className={`text-xs mt-0.5 ${onboardingStyle === arch.id ? "text-accent-fg/70" : "text-muted"}`}>
+                  <div className={`text-xs mt-1 leading-relaxed ${onboardingStyle === arch.id ? "text-accent-fg/70" : "text-muted"}`}>
                     {arch.tagline}
                   </div>
                 </div>
