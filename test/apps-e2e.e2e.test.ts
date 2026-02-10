@@ -212,6 +212,37 @@ describe("Apps E2E", () => {
       expect(status).toBe(500);
       expect(data.error).toBeDefined();
     });
+
+    it("returns launch metadata for known app", async () => {
+      const { data } = await api(server.port, "GET", "/api/apps");
+      const apps = data as unknown as Array<{ name?: string }>;
+      const firstName = apps[0]?.name;
+      if (!firstName) return;
+
+      const launch = await api(server.port, "POST", "/api/apps/launch", {
+        name: firstName,
+      });
+      if (launch.status !== 200) return;
+
+      expect(typeof launch.data.launchType).toBe("string");
+      const launchUrl = launch.data.launchUrl;
+      expect(launchUrl === null || typeof launchUrl === "string").toBe(true);
+    });
+  });
+
+  describe("POST /api/apps/stop", () => {
+    it("returns 400 when name is missing", async () => {
+      const { status } = await api(server.port, "POST", "/api/apps/stop", {});
+      expect(status).toBe(400);
+    });
+
+    it("returns 500 for unknown app name", async () => {
+      const { status, data } = await api(server.port, "POST", "/api/apps/stop", {
+        name: "@elizaos/app-definitely-does-not-exist-xyz",
+      });
+      expect(status).toBe(500);
+      expect(data.error).toBeDefined();
+    });
   });
 
   // ===================================================================

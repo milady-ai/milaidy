@@ -131,8 +131,10 @@ describe("AppManager", () => {
       expect(result.pluginInstalled).toBe(true);
       expect(result.needsRestart).toBe(true);
       expect(result.displayName).toBe("2004scape");
+      expect(result.launchType).toBe("connect");
+      expect(result.launchUrl).toBeNull();
       expect(result.viewer).not.toBeNull();
-      expect(result.viewer?.url).toBe("https://2004scape.org/webclient");
+      expect(result.viewer?.url).toBe("https://2004scape.org/webclient?bot=testbot");
       expect(result.viewer?.embedParams).toEqual({ bot: "testbot" });
       expect(vi.mocked(installPlugin)).toHaveBeenCalledWith(
         "@elizaos/app-2004scape",
@@ -183,6 +185,7 @@ describe("AppManager", () => {
 
       expect(result.pluginInstalled).toBe(true);
       expect(result.needsRestart).toBe(false);
+      expect(result.launchType).toBe("connect");
       expect(mockInstall).not.toHaveBeenCalled();
     });
 
@@ -268,6 +271,57 @@ describe("AppManager", () => {
       const result = await mgr.launch("@elizaos/app-babylon");
 
       expect(result.viewer).toBeNull();
+      expect(result.launchType).toBe("url");
+      expect(result.launchUrl).toBe("https://babylon.social");
+    });
+
+    it("substitutes environment placeholders in launch and viewer URLs", async () => {
+      process.env.TEST_VIEWER_BOT = "agent77";
+
+      const { getAppInfo } = await import("./registry-client.js");
+      vi.mocked(getAppInfo).mockResolvedValue({
+        name: "@elizaos/app-test",
+        displayName: "Test App",
+        description: "Test",
+        category: "game",
+        launchType: "connect",
+        launchUrl: "http://localhost:9999?bot={TEST_VIEWER_BOT}",
+        icon: null,
+        capabilities: [],
+        stars: 0,
+        repository: "",
+        latestVersion: "1.0.0",
+        supports: { v0: false, v1: false, v2: true },
+        npm: {
+          package: "@elizaos/app-test",
+          v0Version: null,
+          v1Version: null,
+          v2Version: "1.0.0",
+        },
+        viewer: {
+          url: "http://localhost:9999",
+          embedParams: { bot: "{TEST_VIEWER_BOT}" },
+        },
+      });
+
+      const { listInstalledPlugins } = await import("./plugin-installer.js");
+      vi.mocked(listInstalledPlugins).mockReturnValue([
+        {
+          name: "@elizaos/app-test",
+          version: "1.0.0",
+          installPath: "/tmp/x",
+          installedAt: "2026-01-01",
+        },
+      ]);
+
+      const { AppManager } = await import("./app-manager.js");
+      const mgr = new AppManager();
+      const result = await mgr.launch("@elizaos/app-test");
+
+      expect(result.launchUrl).toBe("http://localhost:9999?bot=agent77");
+      expect(result.viewer?.url).toBe("http://localhost:9999?bot=agent77");
+
+      delete process.env.TEST_VIEWER_BOT;
     });
   });
 
@@ -320,6 +374,49 @@ describe("AppManager", () => {
       expect(installed.length).toBe(2);
       expect(installed[0].displayName).toBe("2004scape");
       expect(installed[1].displayName).toBe("Discord");
+    });
+  });
+
+  describe("stop", () => {
+    it("returns success payload for known app", async () => {
+      const { getAppInfo } = await import("./registry-client.js");
+      vi.mocked(getAppInfo).mockResolvedValue({
+        name: "@elizaos/app-babylon",
+        displayName: "Babylon",
+        description: "Trading",
+        category: "platform",
+        launchType: "url",
+        launchUrl: "https://babylon.social",
+        icon: null,
+        capabilities: [],
+        stars: 0,
+        repository: "",
+        latestVersion: "1.0.0",
+        supports: { v0: false, v1: false, v2: true },
+        npm: {
+          package: "@elizaos/app-babylon",
+          v0Version: null,
+          v1Version: null,
+          v2Version: "1.0.0",
+        },
+      });
+
+      const { AppManager } = await import("./app-manager.js");
+      const mgr = new AppManager();
+      const result = await mgr.stop("@elizaos/app-babylon");
+
+      expect(result.success).toBe(true);
+      expect(result.appName).toBe("@elizaos/app-babylon");
+      expect(typeof result.stoppedAt).toBe("string");
+    });
+
+    it("throws for unknown app", async () => {
+      const { getAppInfo } = await import("./registry-client.js");
+      vi.mocked(getAppInfo).mockResolvedValue(null);
+
+      const { AppManager } = await import("./app-manager.js");
+      const mgr = new AppManager();
+      await expect(mgr.stop("@elizaos/app-missing")).rejects.toThrow("not found");
     });
   });
 });

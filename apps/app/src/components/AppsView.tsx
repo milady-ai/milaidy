@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from "react";
 import { client, type RegistryAppInfo } from "../api-client";
 import { useApp } from "../AppContext";
 
+const DEFAULT_VIEWER_SANDBOX = "allow-scripts allow-same-origin allow-popups";
+
 const CATEGORY_LABELS: Record<string, string> = {
   game: "Game",
   social: "Social",
@@ -47,8 +49,26 @@ export function AppsView() {
         setState("activeGameApp", app.name);
         setState("activeGameDisplayName", app.displayName ?? app.name);
         setState("activeGameViewerUrl", result.viewer.url);
+        setState("activeGameSandbox", result.viewer.sandbox ?? DEFAULT_VIEWER_SANDBOX);
+        setState("activeGamePostMessageAuth", Boolean(result.viewer.postMessageAuth));
         setState("tab", "game");
+        return;
       }
+      const targetUrl = result.launchUrl ?? app.launchUrl;
+      if (targetUrl) {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+        setActionNotice(
+          `${app.displayName ?? app.name} opened in a new tab.`,
+          "success",
+          2600,
+        );
+        return;
+      }
+      setActionNotice(
+        `${app.displayName ?? app.name} launched, but no viewer or URL is configured.`,
+        "error",
+        4000,
+      );
     } catch (err) {
       setActionNotice(
         `Failed to launch ${app.displayName ?? app.name}: ${err instanceof Error ? err.message : "error"}`,

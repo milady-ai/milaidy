@@ -22,6 +22,8 @@ import {
   searchApps as registrySearchApps,
 } from "./registry-client.js";
 
+const DEFAULT_VIEWER_SANDBOX = "allow-scripts allow-same-origin allow-popups";
+
 export interface AppLaunchResult {
   /** The plugin was installed (or was already installed) */
   pluginInstalled: boolean;
@@ -29,6 +31,10 @@ export interface AppLaunchResult {
   needsRestart: boolean;
   /** Display name of the app */
   displayName: string;
+  /** App launch type from registry metadata */
+  launchType: string;
+  /** External launch URL (used by URL-style apps and pop-out fallback) */
+  launchUrl: string | null;
   /** Viewer config for the game client iframe */
   viewer: {
     url: string;
@@ -44,6 +50,38 @@ export interface InstalledAppInfo {
   pluginName: string;
   version: string;
   installedAt: string;
+}
+
+export interface AppStopResult {
+  success: boolean;
+  appName: string;
+  stoppedAt: string;
+}
+
+function substituteTemplateVars(raw: string): string {
+  return raw.replace(/\{([A-Z0-9_]+)\}/g, (_full, key: string) => {
+    const value = process.env[key];
+    return value && value.trim().length > 0 ? value.trim() : "";
+  });
+}
+
+function buildViewerUrl(
+  baseUrl: string,
+  embedParams?: Record<string, string>,
+): string {
+  if (!embedParams || Object.keys(embedParams).length === 0) {
+    return substituteTemplateVars(baseUrl);
+  }
+  const resolvedBaseUrl = substituteTemplateVars(baseUrl);
+  const [beforeHash, hashPartRaw] = resolvedBaseUrl.split("#", 2);
+  const [pathPart, queryPartRaw] = beforeHash.split("?", 2);
+  const queryParams = new URLSearchParams(queryPartRaw ?? "");
+  for (const [key, rawValue] of Object.entries(embedParams)) {
+    queryParams.set(key, substituteTemplateVars(rawValue));
+  }
+  const query = queryParams.toString();
+  const hash = hashPartRaw ? `#${hashPartRaw}` : "";
+  return `${pathPart}${query.length > 0 ? `?${query}` : ""}${hash}`;
 }
 
 export class AppManager {
@@ -104,20 +142,44 @@ export class AppManager {
     }
 
     // Build viewer config from registry app metadata
+    const launchUrl = appInfo.launchUrl
+      ? substituteTemplateVars(appInfo.launchUrl)
+      : null;
     const viewer = appInfo.viewer
       ? {
-          url: appInfo.viewer.url,
+          url: buildViewerUrl(appInfo.viewer.url, appInfo.viewer.embedParams),
           embedParams: appInfo.viewer.embedParams,
           postMessageAuth: appInfo.viewer.postMessageAuth,
-          sandbox: appInfo.viewer.sandbox,
+          sandbox: appInfo.viewer.sandbox ?? DEFAULT_VIEWER_SANDBOX,
         }
-      : null;
+      : appInfo.launchType === "connect" || appInfo.launchType === "local"
+        ? launchUrl
+          ? {
+              url: launchUrl,
+              sandbox: DEFAULT_VIEWER_SANDBOX,
+            }
+          : null
+        : null;
 
     return {
       pluginInstalled: true,
       needsRestart,
       displayName: appInfo.displayName,
+      launchType: appInfo.launchType,
+      launchUrl,
       viewer,
+    };
+  }
+
+  async stop(name: string): Promise<AppStopResult> {
+    const appInfo = await registryGetAppInfo(name);
+    if (!appInfo) {
+      throw new Error(`App "${name}" not found in the registry.`);
+    }
+    return {
+      success: true,
+      appName: name,
+      stoppedAt: new Date().toISOString(),
     };
   }
 

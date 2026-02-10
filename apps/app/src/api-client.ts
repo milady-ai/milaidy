@@ -87,6 +87,82 @@ export interface AgentStatus {
   startedAt: number | undefined;
 }
 
+export type TriggerType = "interval" | "once" | "cron";
+export type TriggerWakeMode = "inject_now" | "next_autonomy_cycle";
+export type TriggerLastStatus = "success" | "error" | "skipped";
+
+export interface TriggerSummary {
+  id: string;
+  taskId: string;
+  displayName: string;
+  instructions: string;
+  triggerType: TriggerType;
+  enabled: boolean;
+  wakeMode: TriggerWakeMode;
+  createdBy: string;
+  timezone?: string;
+  intervalMs?: number;
+  scheduledAtIso?: string;
+  cronExpression?: string;
+  maxRuns?: number;
+  runCount: number;
+  nextRunAtMs?: number;
+  lastRunAtIso?: string;
+  lastStatus?: TriggerLastStatus;
+  lastError?: string;
+  updatedAt?: number;
+  updateInterval?: number;
+}
+
+export interface TriggerRunRecord {
+  triggerRunId: string;
+  triggerId: string;
+  taskId: string;
+  startedAt: number;
+  finishedAt: number;
+  status: TriggerLastStatus;
+  error?: string;
+  latencyMs: number;
+  source: "scheduler" | "manual";
+}
+
+export interface TriggerHealthSnapshot {
+  triggersEnabled: boolean;
+  activeTriggers: number;
+  disabledTriggers: number;
+  totalExecutions: number;
+  totalFailures: number;
+  totalSkipped: number;
+  lastExecutionAt?: number;
+}
+
+export interface CreateTriggerRequest {
+  displayName?: string;
+  instructions?: string;
+  triggerType?: TriggerType;
+  wakeMode?: TriggerWakeMode;
+  enabled?: boolean;
+  createdBy?: string;
+  timezone?: string;
+  intervalMs?: number;
+  scheduledAtIso?: string;
+  cronExpression?: string;
+  maxRuns?: number;
+}
+
+export interface UpdateTriggerRequest {
+  displayName?: string;
+  instructions?: string;
+  triggerType?: TriggerType;
+  wakeMode?: TriggerWakeMode;
+  enabled?: boolean;
+  timezone?: string;
+  intervalMs?: number;
+  scheduledAtIso?: string;
+  cronExpression?: string;
+  maxRuns?: number;
+}
+
 export interface MessageExample {
   user: string;
   content: { text: string };
@@ -284,6 +360,8 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
+export type ConversationMode = "simple" | "power";
+
 export interface SkillInfo {
   id: string;
   name: string;
@@ -360,6 +438,29 @@ export interface LogsFilter {
   level?: string;
   tag?: string;
   since?: number;
+}
+
+export type StreamEventType = "agent_event" | "heartbeat_event";
+
+export interface StreamEventEnvelope {
+  type: StreamEventType;
+  version: 1;
+  eventId: string;
+  ts: number;
+  runId?: string;
+  seq?: number;
+  stream?: string;
+  sessionKey?: string;
+  agentId?: string;
+  roomId?: string;
+  payload: object;
+}
+
+export interface AgentEventsResponse {
+  events: StreamEventEnvelope[];
+  latestEventId: string | null;
+  totalBuffered: number;
+  replayed: boolean;
 }
 
 export interface ExtensionStatus {
@@ -508,6 +609,11 @@ export interface WorkbenchTodo {
 export interface WorkbenchOverview {
   goals: WorkbenchGoal[];
   todos: WorkbenchTodo[];
+  autonomy?: {
+    enabled: boolean;
+    thinking: boolean;
+    lastEventAt?: number | null;
+  };
 }
 
 // MCP
@@ -625,7 +731,14 @@ export interface AppLaunchResult {
   pluginInstalled: boolean;
   needsRestart: boolean;
   displayName: string;
+  launchType: string;
+  launchUrl: string | null;
   viewer: AppViewerConfig | null;
+}
+export interface AppStopResult {
+  success: boolean;
+  appName: string;
+  stoppedAt: string;
 }
 
 // WebSocket
@@ -877,6 +990,63 @@ export class MilaidyClient {
     });
   }
 
+  async getTriggers(): Promise<{ triggers: TriggerSummary[] }> {
+    return this.fetch("/api/triggers");
+  }
+
+  async getTrigger(id: string): Promise<{ trigger: TriggerSummary }> {
+    return this.fetch(`/api/triggers/${encodeURIComponent(id)}`);
+  }
+
+  async createTrigger(
+    request: CreateTriggerRequest,
+  ): Promise<{ trigger: TriggerSummary }> {
+    return this.fetch("/api/triggers", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateTrigger(
+    id: string,
+    request: UpdateTriggerRequest,
+  ): Promise<{ trigger: TriggerSummary }> {
+    return this.fetch(`/api/triggers/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteTrigger(id: string): Promise<{ ok: boolean }> {
+    return this.fetch(`/api/triggers/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async runTriggerNow(
+    id: string,
+  ): Promise<{
+    ok: boolean;
+    result: {
+      status: TriggerLastStatus;
+      error?: string;
+      taskDeleted: boolean;
+    };
+    trigger?: TriggerSummary;
+  }> {
+    return this.fetch(`/api/triggers/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+    });
+  }
+
+  async getTriggerRuns(id: string): Promise<{ runs: TriggerRunRecord[] }> {
+    return this.fetch(`/api/triggers/${encodeURIComponent(id)}/runs`);
+  }
+
+  async getTriggerHealth(): Promise<TriggerHealthSnapshot> {
+    return this.fetch("/api/triggers/health");
+  }
+
   async getPlugins(): Promise<{ plugins: PluginInfo[] }> {
     return this.fetch("/api/plugins");
   }
@@ -919,6 +1089,17 @@ export class MilaidyClient {
     if (filter?.since) params.set("since", String(filter.since));
     const qs = params.toString();
     return this.fetch(`/api/logs${qs ? `?${qs}` : ""}`);
+  }
+
+  async getAgentEvents(opts?: {
+    afterEventId?: string;
+    limit?: number;
+  }): Promise<AgentEventsResponse> {
+    const params = new URLSearchParams();
+    if (opts?.afterEventId) params.set("after", opts.afterEventId);
+    if (typeof opts?.limit === "number") params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    return this.fetch(`/api/agent/events${qs ? `?${qs}` : ""}`);
   }
 
   async getExtensionStatus(): Promise<ExtensionStatus> {
@@ -1156,7 +1337,7 @@ export class MilaidyClient {
   async listApps(): Promise<RegistryAppInfo[]> { return this.fetch("/api/apps"); }
   async searchApps(query: string): Promise<RegistryAppInfo[]> { return this.fetch(`/api/apps/search?q=${encodeURIComponent(query)}`); }
   async listInstalledApps(): Promise<InstalledAppInfo[]> { return this.fetch("/api/apps/installed"); }
-  async stopApp(name: string): Promise<{ success: boolean }> {
+  async stopApp(name: string): Promise<AppStopResult> {
     return this.fetch("/api/apps/stop", { method: "POST", body: JSON.stringify({ name }) });
   }
   async getAppInfo(name: string): Promise<RegistryAppInfo> { return this.fetch(`/api/apps/info/${encodeURIComponent(name)}`); }
@@ -1399,10 +1580,13 @@ export class MilaidyClient {
    * Send a chat message via the REST endpoint (reliable — does not depend on
    * a WebSocket connection).  Returns the agent's response text.
    */
-  async sendChatRest(text: string): Promise<{ text: string; agentName: string }> {
+  async sendChatRest(
+    text: string,
+    mode: ConversationMode = "simple",
+  ): Promise<{ text: string; agentName: string }> {
     return this.fetch<{ text: string; agentName: string }>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, mode }),
     });
   }
 
@@ -1423,10 +1607,14 @@ export class MilaidyClient {
     return this.fetch(`/api/conversations/${encodeURIComponent(id)}/messages`);
   }
 
-  async sendConversationMessage(id: string, text: string): Promise<{ text: string; agentName: string }> {
+  async sendConversationMessage(
+    id: string,
+    text: string,
+    mode: ConversationMode = "simple",
+  ): Promise<{ text: string; agentName: string }> {
     return this.fetch(`/api/conversations/${encodeURIComponent(id)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, mode }),
     });
   }
 

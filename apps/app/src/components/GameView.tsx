@@ -6,8 +6,18 @@ import { useState, useCallback } from "react";
 import { client } from "../api-client";
 import { useApp } from "../AppContext";
 
+const DEFAULT_VIEWER_SANDBOX = "allow-scripts allow-same-origin allow-popups";
+
 export function GameView() {
-  const { activeGameApp, activeGameDisplayName, activeGameViewerUrl, activeGameSandbox, setState, setActionNotice } = useApp();
+  const {
+    activeGameApp,
+    activeGameDisplayName,
+    activeGameViewerUrl,
+    activeGameSandbox,
+    activeGamePostMessageAuth,
+    setState,
+    setActionNotice,
+  } = useApp();
   const [stopping, setStopping] = useState(false);
 
   const handleStop = useCallback(async () => {
@@ -18,6 +28,8 @@ export function GameView() {
       setState("activeGameApp", "");
       setState("activeGameDisplayName", "");
       setState("activeGameViewerUrl", "");
+      setState("activeGameSandbox", DEFAULT_VIEWER_SANDBOX);
+      setState("activeGamePostMessageAuth", false);
       setState("tab", "apps");
       setActionNotice("App stopped.", "success");
     } catch (err) {
@@ -45,7 +57,18 @@ export function GameView() {
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card">
         <span className="font-bold text-sm">{activeGameDisplayName || activeGameApp}</span>
+        {activeGamePostMessageAuth ? (
+          <span className="text-[10px] px-1.5 py-0.5 border border-border text-muted">
+            postMessage auth
+          </span>
+        ) : null}
         <span className="flex-1" />
+        <button
+          className="text-xs px-3 py-1 bg-accent text-accent-fg border border-accent cursor-pointer hover:bg-accent-hover disabled:opacity-40"
+          onClick={() => window.open(activeGameViewerUrl, "_blank", "noopener,noreferrer")}
+        >
+          Open in New Tab
+        </button>
         <button
           className="text-xs px-3 py-1 bg-accent text-accent-fg border border-accent cursor-pointer hover:bg-accent-hover disabled:opacity-40"
           disabled={stopping}

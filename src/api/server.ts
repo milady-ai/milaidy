@@ -54,6 +54,7 @@ import {
   type PluginParamInfo,
   validatePluginConfig,
 } from "./plugin-validation.js";
+import { handleTriggerRoutes } from "./trigger-routes.js";
 import {
   fetchEvmBalances,
   fetchEvmNfts,
@@ -89,6 +90,19 @@ function getAutonomySvc(
   return runtime.getService("AUTONOMY") as AutonomyServiceLike | null;
 }
 
+function getAgentEventSvc(
+  runtime: AgentRuntime | null,
+): AgentEventServiceLike | null {
+  if (!runtime) return null;
+  return runtime.getService("AGENT_EVENT") as AgentEventServiceLike | null;
+}
+
+function isUuidLike(value: string): value is UUID {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 /** Metadata for a web-chat conversation. */
 interface ConversationMeta {
   id: string;
@@ -97,6 +111,8 @@ interface ConversationMeta {
   createdAt: string;
   updatedAt: string;
 }
+
+type ChatMode = "simple" | "power";
 
 interface ServerState {
   runtime: AgentRuntime | null;
@@ -114,8 +130,11 @@ interface ServerState {
   plugins: PluginEntry[];
   skills: SkillEntry[];
   logBuffer: LogEntry[];
+  eventBuffer: StreamEventEnvelope[];
+  nextEventId: number;
   chatRoomId: UUID | null;
   chatUserId: UUID | null;
+  adminEntityId: UUID | null;
   /** Conversation metadata by conversation id. */
   conversations: Map<string, ConversationMeta>;
   /** Cloud manager for Eliza Cloud integration (null when cloud is disabled). */
@@ -191,6 +210,53 @@ interface LogEntry {
   message: string;
   source: string;
   tags: string[];
+}
+
+interface AgentEventPayloadLike {
+  runId: string;
+  seq: number;
+  stream: string;
+  ts: number;
+  data: object;
+  sessionKey?: string;
+  agentId?: string;
+  roomId?: UUID;
+}
+
+interface HeartbeatEventPayloadLike {
+  ts: number;
+  status: string;
+  to?: string;
+  preview?: string;
+  durationMs?: number;
+  hasMedia?: boolean;
+  reason?: string;
+  channel?: string;
+  silent?: boolean;
+  indicatorType?: string;
+}
+
+interface AgentEventServiceLike {
+  subscribe: (listener: (event: AgentEventPayloadLike) => void) => () => void;
+  subscribeHeartbeat: (
+    listener: (event: HeartbeatEventPayloadLike) => void,
+  ) => () => void;
+}
+
+type StreamEventType = "agent_event" | "heartbeat_event";
+
+interface StreamEventEnvelope {
+  type: StreamEventType;
+  version: 1;
+  eventId: string;
+  ts: number;
+  runId?: string;
+  seq?: number;
+  stream?: string;
+  sessionKey?: string;
+  agentId?: string;
+  roomId?: UUID;
+  payload: object;
 }
 
 // ---------------------------------------------------------------------------
@@ -1964,6 +2030,12 @@ async function handleRequest(
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     config.agents.defaults.workspace = resolveDefaultAgentWorkspaceDir();
+    const onboardingAdminEntityId = stringToUuid(
+      `${(body.name as string).trim()}-admin-entity`,
+    ) as UUID;
+    config.agents.defaults.adminEntityId = onboardingAdminEntityId;
+    state.adminEntityId = onboardingAdminEntityId;
+    state.chatUserId = onboardingAdminEntityId;
 
     if (!config.agents.list) config.agents.list = [];
     if (config.agents.list.length === 0) {
@@ -2286,6 +2358,20 @@ async function handleRequest(
         startedAt: state.startedAt,
       },
     });
+    return;
+  }
+
+  const triggerHandled = await handleTriggerRoutes({
+    req,
+    res,
+    method,
+    pathname,
+    runtime: state.runtime,
+    readJsonBody,
+    json,
+    error,
+  });
+  if (triggerHandled) {
     return;
   }
 
@@ -4269,6 +4355,30 @@ async function handleRequest(
     return;
   }
 
+  // ── GET /api/agent/events?after=evt-123&limit=200 ───────────────────────
+  if (method === "GET" && pathname === "/api/agent/events") {
+    const limitRaw = Number(url.searchParams.get("limit") ?? "200");
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000)
+      : 200;
+    const afterEventId = url.searchParams.get("after");
+    let startIndex = 0;
+    if (afterEventId) {
+      const idx = state.eventBuffer.findIndex((event) => event.eventId === afterEventId);
+      if (idx >= 0) startIndex = idx + 1;
+    }
+    const events = state.eventBuffer.slice(startIndex, startIndex + limit);
+    const latestEventId =
+      events.length > 0 ? events[events.length - 1].eventId : null;
+    json(res, {
+      events,
+      latestEventId,
+      totalBuffered: state.eventBuffer.length,
+      replayed: true,
+    });
+    return;
+  }
+
   // ── GET /api/extension/status ─────────────────────────────────────────
   // Check if the Chrome extension relay server is reachable.
   if (method === "GET" && pathname === "/api/extension/status") {
@@ -4764,12 +4874,58 @@ async function handleRequest(
   // Conversation routes (/api/conversations/*)
   // ═══════════════════════════════════════════════════════════════════════
 
-  // Helper: ensure a persistent chat user exists.
-  const ensureChatUser = async (): Promise<UUID> => {
-    if (!state.chatUserId) {
-      state.chatUserId = crypto.randomUUID() as UUID;
+  const ensureAdminEntityId = (): UUID => {
+    if (state.adminEntityId) {
+      return state.adminEntityId;
     }
-    return state.chatUserId;
+    const configured = state.config.agents?.defaults?.adminEntityId?.trim();
+    const nextAdminEntityId =
+      configured && isUuidLike(configured)
+        ? configured
+        : (stringToUuid(`${state.agentName}-admin-entity`) as UUID);
+    if (configured && !isUuidLike(configured)) {
+      logger.warn(
+        `[milaidy-api] Invalid agents.defaults.adminEntityId "${configured}", using deterministic fallback`,
+      );
+    }
+    state.adminEntityId = nextAdminEntityId;
+    state.chatUserId = state.adminEntityId;
+    return nextAdminEntityId;
+  };
+
+  // Ensure ownership + admin role metadata contract on the world.
+  const ensureWorldOwnershipAndRoles = async (
+    runtime: AgentRuntime,
+    worldId: UUID,
+    ownerId: UUID,
+  ): Promise<void> => {
+    const world = await runtime.getWorld(worldId);
+    if (!world) return;
+    let needsUpdate = false;
+    if (!world.metadata) {
+      world.metadata = {};
+      needsUpdate = true;
+    }
+    if (
+      !world.metadata.ownership ||
+      typeof world.metadata.ownership !== "object" ||
+      (world.metadata.ownership as { ownerId?: string }).ownerId !== ownerId
+    ) {
+      world.metadata.ownership = { ownerId };
+      needsUpdate = true;
+    }
+    const metadataWithRoles = world.metadata as {
+      roles?: Record<string, string>;
+    };
+    const roles = metadataWithRoles.roles ?? {};
+    if (roles[ownerId] !== "OWNER") {
+      roles[ownerId] = "OWNER";
+      metadataWithRoles.roles = roles;
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      await runtime.updateWorld(world);
+    }
   };
 
   // Helper: ensure the room for a conversation is set up.
@@ -4781,7 +4937,7 @@ async function handleRequest(
     if (!state.runtime) return;
     const runtime = state.runtime;
     const agentName = runtime.character.name ?? "Milaidy";
-    const userId = await ensureChatUser();
+    const userId = ensureAdminEntityId();
     const worldId = stringToUuid(`${agentName}-web-chat-world`);
     const messageServerId = stringToUuid(`${agentName}-web-server`) as UUID;
     await runtime.ensureConnection({
@@ -4795,27 +4951,7 @@ async function handleRequest(
       messageServerId,
       metadata: { ownership: { ownerId: userId } },
     });
-    // Ensure the world has ownership metadata so the settings provider
-    // can locate it via findWorldsForOwner during onboarding / DM flows.
-    const world = await runtime.getWorld(worldId);
-    if (world) {
-      let needsUpdate = false;
-      if (!world.metadata) {
-        world.metadata = {};
-        needsUpdate = true;
-      }
-      if (
-        !world.metadata.ownership ||
-        typeof world.metadata.ownership !== "object" ||
-        (world.metadata.ownership as { ownerId: string }).ownerId !== userId
-      ) {
-        world.metadata.ownership = { ownerId: userId };
-        needsUpdate = true;
-      }
-      if (needsUpdate) {
-        await runtime.updateWorld(world);
-      }
-    }
+    await ensureWorldOwnershipAndRoles(runtime, worldId as UUID, userId);
   };
 
   // ── GET /api/conversations ──────────────────────────────────────────
@@ -4901,12 +5037,17 @@ async function handleRequest(
       error(res, "Conversation not found", 404);
       return;
     }
-    const body = await readJsonBody<{ text?: string }>(req, res);
+    const body = await readJsonBody<{ text?: string; mode?: string }>(req, res);
     if (!body) return;
     if (!body.text?.trim()) {
       error(res, "text is required");
       return;
     }
+    if (body.mode && body.mode !== "simple" && body.mode !== "power") {
+      error(res, "mode must be 'simple' or 'power'", 400);
+      return;
+    }
+    const mode: ChatMode = body.mode === "simple" ? "simple" : "power";
     if (!state.runtime) {
       error(res, "Agent is not running", 503);
       return;
@@ -4915,7 +5056,11 @@ async function handleRequest(
     // Cloud proxy path
     const proxy = state.cloudManager?.getProxy();
     if (proxy) {
-      const responseText = await proxy.handleChatMessage(body.text.trim());
+      const responseText = await proxy.handleChatMessage(
+        body.text.trim(),
+        conv.roomId,
+        mode,
+      );
       conv.updatedAt = new Date().toISOString();
       json(res, { text: responseText, agentName: proxy.agentName });
       return;
@@ -4923,7 +5068,7 @@ async function handleRequest(
 
     try {
       const runtime = state.runtime;
-      const userId = await ensureChatUser();
+      const userId = ensureAdminEntityId();
       await ensureConversationRoom(conv);
 
       const message = createMessageMemory({
@@ -4932,6 +5077,8 @@ async function handleRequest(
         roomId: conv.roomId,
         content: {
           text: body.text.trim(),
+          mode,
+          simple: mode === "simple",
           source: "client_chat",
           channelType: ChannelType.DM,
         },
@@ -5071,12 +5218,17 @@ async function handleRequest(
     // ── Cloud proxy path ───────────────────────────────────────────────
     const proxy = state.cloudManager?.getProxy();
     if (proxy) {
-      const body = await readJsonBody<{ text?: string }>(req, res);
+      const body = await readJsonBody<{ text?: string; mode?: string }>(req, res);
       if (!body) return;
       if (!body.text?.trim()) {
         error(res, "text is required");
         return;
       }
+      if (body.mode && body.mode !== "simple" && body.mode !== "power") {
+        error(res, "mode must be 'simple' or 'power'", 400);
+        return;
+      }
+      const mode: ChatMode = body.mode === "simple" ? "simple" : "power";
 
       const wantsStream = (req.headers.accept ?? "").includes(
         "text/event-stream",
@@ -5092,25 +5244,36 @@ async function handleRequest(
 
         for await (const chunk of proxy.handleChatMessageStream(
           body.text.trim(),
+          "web-chat",
+          mode,
         )) {
           res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
         }
         res.write(`event: done\ndata: {}\n\n`);
         res.end();
       } else {
-        const responseText = await proxy.handleChatMessage(body.text.trim());
+        const responseText = await proxy.handleChatMessage(
+          body.text.trim(),
+          "web-chat",
+          mode,
+        );
         json(res, { text: responseText, agentName: proxy.agentName });
       }
       return;
     }
 
     // ── Local runtime path (existing code below) ───────────────────────
-    const body = await readJsonBody<{ text?: string }>(req, res);
+    const body = await readJsonBody<{ text?: string; mode?: string }>(req, res);
     if (!body) return;
     if (!body.text?.trim()) {
       error(res, "text is required");
       return;
     }
+    if (body.mode && body.mode !== "simple" && body.mode !== "power") {
+      error(res, "mode must be 'simple' or 'power'", 400);
+      return;
+    }
+    const mode: ChatMode = body.mode === "simple" ? "simple" : "power";
 
     if (!state.runtime) {
       error(res, "Agent is not running", 503);
@@ -5124,7 +5287,7 @@ async function handleRequest(
       // Lazily initialise a persistent chat room + user for the web UI so
       // that conversation memory accumulates across messages.
       if (!state.chatUserId || !state.chatRoomId) {
-        state.chatUserId = crypto.randomUUID() as UUID;
+        state.chatUserId = ensureAdminEntityId();
         state.chatRoomId = stringToUuid(`${agentName}-web-chat-room`);
         const worldId = stringToUuid(`${agentName}-web-chat-world`);
         // Use a deterministic messageServerId so the settings provider
@@ -5141,32 +5304,11 @@ async function handleRequest(
           messageServerId,
           metadata: { ownership: { ownerId: state.chatUserId } },
         });
-        // Ensure the world has ownership metadata so the settings
-        // provider can locate it via findWorldsForOwner during onboarding.
-        // This also handles worlds that already exist from a prior session
-        // but were created without ownership metadata.
-        const world = await runtime.getWorld(worldId);
-        if (world) {
-          let needsUpdate = false;
-          if (!world.metadata) {
-            world.metadata = {};
-            needsUpdate = true;
-          }
-          if (
-            !world.metadata.ownership ||
-            typeof world.metadata.ownership !== "object" ||
-            (world.metadata.ownership as { ownerId: string }).ownerId !==
-              state.chatUserId
-          ) {
-            world.metadata.ownership = {
-              ownerId: state.chatUserId ?? "",
-            };
-            needsUpdate = true;
-          }
-          if (needsUpdate) {
-            await runtime.updateWorld(world);
-          }
-        }
+        await ensureWorldOwnershipAndRoles(
+          runtime,
+          worldId as UUID,
+          state.chatUserId,
+        );
       }
 
       const message = createMessageMemory({
@@ -5175,6 +5317,8 @@ async function handleRequest(
         roomId: state.chatRoomId,
         content: {
           text: body.text.trim(),
+          mode,
+          simple: mode === "simple",
           source: "client_chat",
           channelType: ChannelType.DM,
         },
@@ -5374,6 +5518,19 @@ async function handleRequest(
     return;
   }
 
+  // Stop an app: currently this clears active UI session state and returns success
+  if (method === "POST" && pathname === "/api/apps/stop") {
+    const body = await readJsonBody<{ name?: string }>(req, res);
+    if (!body) return;
+    if (!body.name?.trim()) {
+      error(res, "name is required");
+      return;
+    }
+    const result = await state.appManager.stop(body.name.trim());
+    json(res, result);
+    return;
+  }
+
   if (method === "GET" && pathname.startsWith("/api/apps/info/")) {
     const appName = decodeURIComponent(
       pathname.slice("/api/apps/info/".length),
@@ -5466,7 +5623,21 @@ async function handleRequest(
       totalTodos: 0,
       completedTodos: 0,
     };
-    const autonomy = { enabled: true, thinking: false };
+    const latestAutonomyEvent = [...state.eventBuffer]
+      .reverse()
+      .find(
+        (event) =>
+          event.type === "agent_event" &&
+          (event.stream === "assistant" ||
+            event.stream === "provider" ||
+            event.stream === "evaluator"),
+      );
+    const autonomySvc = getAutonomySvc(state.runtime);
+    const autonomy = {
+      enabled: true,
+      thinking: autonomySvc?.isLoopRunning() ?? false,
+      lastEventAt: latestAutonomyEvent?.ts ?? null,
+    };
     let goalsAvailable = false;
     let todosAvailable = false;
 
@@ -6000,13 +6171,25 @@ export async function startApiServer(opts?: {
     plugins,
     skills,
     logBuffer: [],
+    eventBuffer: [],
+    nextEventId: 1,
     chatRoomId: null,
     chatUserId: null,
+    adminEntityId: null,
     conversations: new Map(),
     cloudManager: null,
     appManager: new AppManager(),
     shareIngestQueue: [],
   };
+  const configuredAdminEntityId = config.agents?.defaults?.adminEntityId;
+  if (configuredAdminEntityId && isUuidLike(configuredAdminEntityId)) {
+    state.adminEntityId = configuredAdminEntityId;
+    state.chatUserId = state.adminEntityId;
+  } else if (configuredAdminEntityId) {
+    logger.warn(
+      `[milaidy-api] Ignoring invalid agents.defaults.adminEntityId "${configuredAdminEntityId}"`,
+    );
+  }
 
   // Wire the app manager to the runtime if already running
   if (state.runtime) {
@@ -6202,9 +6385,76 @@ export async function startApiServer(opts?: {
     }
   });
 
+  const broadcastWs = (payload: object): void => {
+    const message = JSON.stringify(payload);
+    for (const client of wsClients) {
+      if (client.readyState === 1) {
+        try {
+          client.send(message);
+        } catch (err) {
+          logger.error(
+            `[milaidy-api] WebSocket broadcast error: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+    }
+  };
+
+  const pushEvent = (event: Omit<StreamEventEnvelope, "eventId" | "version">) => {
+    const envelope: StreamEventEnvelope = {
+      ...event,
+      eventId: `evt-${state.nextEventId}`,
+      version: 1,
+    };
+    state.nextEventId += 1;
+    state.eventBuffer.push(envelope);
+    if (state.eventBuffer.length > 1500) {
+      state.eventBuffer.splice(0, state.eventBuffer.length - 1500);
+    }
+    broadcastWs(envelope);
+  };
+
+  let detachRuntimeStreams: (() => void) | null = null;
+  const bindRuntimeStreams = (runtime: AgentRuntime | null) => {
+    if (detachRuntimeStreams) {
+      detachRuntimeStreams();
+      detachRuntimeStreams = null;
+    }
+    const svc = getAgentEventSvc(runtime);
+    if (!svc) return;
+
+    const unsubAgentEvents = svc.subscribe((event) => {
+      pushEvent({
+        type: "agent_event",
+        ts: event.ts,
+        runId: event.runId,
+        seq: event.seq,
+        stream: event.stream,
+        sessionKey: event.sessionKey,
+        agentId: event.agentId,
+        roomId: event.roomId,
+        payload: event.data,
+      });
+    });
+
+    const unsubHeartbeat = svc.subscribeHeartbeat((event) => {
+      pushEvent({
+        type: "heartbeat_event",
+        ts: event.ts,
+        payload: event,
+      });
+    });
+
+    detachRuntimeStreams = () => {
+      unsubAgentEvents();
+      unsubHeartbeat();
+    };
+  };
+
   // ── WebSocket Server ─────────────────────────────────────────────────────
   const wss = new WebSocketServer({ noServer: true });
   const wsClients = new Set<WebSocket>();
+  bindRuntimeStreams(opts?.runtime ?? null);
 
   // Handle upgrade requests for WebSocket
   server.on("upgrade", (request, socket, head) => {
@@ -6236,17 +6486,19 @@ export async function startApiServer(opts?: {
       "websocket",
     ]);
 
-    // Send initial status (flattened shape — matches UI AgentStatus)
+    // Send initial status and latest stream events.
     try {
-      ws.send(
-        JSON.stringify({
-          type: "status",
-          state: state.agentState,
-          agentName: state.agentName,
-          model: state.model,
-          startedAt: state.startedAt,
-        }),
-      );
+      ws.send(JSON.stringify({
+        type: "status",
+        state: state.agentState,
+        agentName: state.agentName,
+        model: state.model,
+        startedAt: state.startedAt,
+      }));
+      const replay = state.eventBuffer.slice(-120);
+      for (const event of replay) {
+        ws.send(JSON.stringify(event));
+      }
     } catch (err) {
       logger.error(
         `[milaidy-api] WebSocket send error: ${err instanceof Error ? err.message : err}`,
@@ -6284,26 +6536,13 @@ export async function startApiServer(opts?: {
 
   // Broadcast status to all connected WebSocket clients (flattened — PR #36 fix)
   const broadcastStatus = () => {
-    const statusData = {
+    broadcastWs({
       type: "status",
       state: state.agentState,
       agentName: state.agentName,
       model: state.model,
       startedAt: state.startedAt,
-    };
-    const message = JSON.stringify(statusData);
-    for (const client of wsClients) {
-      if (client.readyState === 1) {
-        // OPEN
-        try {
-          client.send(message);
-        } catch (err) {
-          logger.error(
-            `[milaidy-api] WebSocket broadcast error: ${err instanceof Error ? err.message : err}`,
-          );
-        }
-      }
-    }
+    });
   };
 
   // Broadcast status every 5 seconds
@@ -6381,6 +6620,7 @@ export async function startApiServer(opts?: {
   /** Hot-swap the runtime reference (used after an in-process restart). */
   const updateRuntime = (rt: AgentRuntime): void => {
     state.runtime = rt;
+    bindRuntimeStreams(rt);
     // AppManager doesn't need a runtime reference
     state.agentState = "running";
     state.agentName = rt.character.name ?? "Milaidy";
@@ -6417,6 +6657,10 @@ export async function startApiServer(opts?: {
         close: () =>
           new Promise<void>((r) => {
             clearInterval(statusInterval);
+            if (detachRuntimeStreams) {
+              detachRuntimeStreams();
+              detachRuntimeStreams = null;
+            }
             wss.close();
             server.close(() => r());
           }),
