@@ -29,6 +29,7 @@ import {
   saveMilaidyConfig,
 } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
+import type { ConnectorConfig } from "../config/types.milaidy.js";
 import { CharacterSchema } from "../config/zod-schema.js";
 import { resolveDefaultAgentWorkspaceDir } from "../providers/workspace.js";
 import {
