@@ -28,7 +28,7 @@ const PRIVATE_IP_PATTERNS: RegExp[] = [
   /^172\.(1[6-9]|2\d|3[01])\./, // RFC 1918 Class B
   /^192\.168\./, // RFC 1918 Class C
   /^::1$/, // IPv6 loopback
-  /^fc00:/i, // IPv6 ULA
+  /^f[cd][0-9a-f]{2}:/i, // IPv6 ULA (fc00::/7 — covers both fc00::/8 and fd00::/8)
 ];
 
 function isBlockedIp(ip: string): boolean {
