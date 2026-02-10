@@ -48,6 +48,19 @@ import { SkillScanReportSummary } from "./api-client";
 
 const THEME_STORAGE_KEY = "milaidy:theme";
 
+/** Total number of built-in VRM character models. */
+export const VRM_COUNT = 8;
+
+/** Return the public URL for a built-in VRM model file. */
+export function getVrmUrl(index: number): string {
+  return `/vrms/${index}.vrm`;
+}
+
+/** Return the public URL for a VRM preview thumbnail. */
+export function getVrmPreviewUrl(index: number): string {
+  return `/vrms/previews/milady-${index}.png`;
+}
+
 export type ThemeName =
   | "milady"
   | "qt314"

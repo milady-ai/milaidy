@@ -57,6 +57,7 @@
     "learn:loop": "scripts/rt.sh scripts/knowledge-loop.mjs",
     "learn:snapshot": "scripts/rt.sh scripts/knowledge-loop.mjs --full",
     "milaidy": "scripts/rt.sh scripts/run-node.mjs",
+    "postinstall": "node scripts/link-browser-server.mjs || true",
     "prepack": "scripts/rt.sh run build",
     "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath git-hooks',{stdio:'ignore'})}catch{}\"",
     "release:check": "node --import tsx scripts/release-check.ts",

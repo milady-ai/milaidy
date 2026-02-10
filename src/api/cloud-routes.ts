@@ -3,6 +3,7 @@
  */
 
 import type http from "node:http";
+import type { AgentRuntime } from "@elizaos/core";
 import type { CloudManager } from "../cloud/cloud-manager.js";
 import type { MilaidyConfig } from "../config/config.js";
 import { saveMilaidyConfig } from "../config/config.js";
@@ -10,6 +11,7 @@ import { saveMilaidyConfig } from "../config/config.js";
 export interface CloudRouteState {
   config: MilaidyConfig;
   cloudManager: CloudManager | null;
+  runtime: AgentRuntime | null;
 }
 
 const UUID_RE =
@@ -126,6 +128,35 @@ export async function handleCloudRoute(
       cloud.apiKey = data.apiKey;
       (state.config as Record<string, unknown>).cloud = cloud;
       saveMilaidyConfig(state.config);
+
+      // Also push the key into process.env so the current runtime can use
+      // it immediately (without a restart) and into the agent's DB record
+      // so it survives config-file resets.
+      process.env.ELIZAOS_CLOUD_API_KEY = data.apiKey;
+      process.env.ELIZAOS_CLOUD_ENABLED = "true";
+
+      if (state.runtime) {
+        try {
+          // Update character secrets in memory so getSetting() finds it
+          if (!state.runtime.character.secrets) {
+            state.runtime.character.secrets = {};
+          }
+          (state.runtime.character.secrets as Record<string, string>)
+            .ELIZAOS_CLOUD_API_KEY = data.apiKey;
+          (state.runtime.character.secrets as Record<string, string>)
+            .ELIZAOS_CLOUD_ENABLED = "true";
+
+          // Persist to agent record in database
+          const agentId = state.runtime.agentId;
+          const existingSecrets =
+            (state.runtime.character.secrets as Record<string, string>) ?? {};
+          await state.runtime.updateAgent(agentId, {
+            secrets: { ...existingSecrets },
+          });
+        } catch {
+          // Non-fatal — config file still has it, DB update is best-effort
+        }
+      }
 
       if (state.cloudManager && !state.cloudManager.getClient())
         state.cloudManager.init();

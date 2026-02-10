@@ -4385,6 +4385,7 @@ async function handleRequest(
     const cloudState: CloudRouteState = {
       config: state.config,
       cloudManager: state.cloudManager,
+      runtime: state.runtime,
     };
     const handled = await handleCloudRoute(
       req,

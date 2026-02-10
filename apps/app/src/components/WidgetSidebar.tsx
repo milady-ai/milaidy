@@ -29,18 +29,6 @@ export function WidgetSidebar() {
 
   return (
     <aside className="w-[260px] min-w-[260px] border-l border-border flex flex-col h-full font-body text-[13px]" data-testid="widget-sidebar">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <h3 className="text-txt-strong font-semibold">Workbench</h3>
-        <button
-          className="text-muted hover:text-txt-strong transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={loadWorkbench}
-          disabled={workbenchLoading}
-          title="Refresh workbench"
-        >
-          ↻
-        </button>
-      </div>
-
       {isAgentStopped ? (
         <div className="flex items-center justify-center flex-1">
           <p className="text-muted">Agent not running</p>
