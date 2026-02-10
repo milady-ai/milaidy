@@ -25,7 +25,10 @@ function displayPluginConfig(
       required?: boolean;
       sensitive?: boolean;
     }>;
-    configUiHints?: Record<string, { label?: string; help?: string; sensitive?: boolean }>;
+    configUiHints?: Record<
+      string,
+      { label?: string; help?: string; sensitive?: boolean }
+    >;
   },
   currentEnv: Record<string, string | undefined>,
 ): void {
@@ -50,7 +53,7 @@ function displayPluginConfig(
 
     const required = param.required ? chalk.red(" *") : "";
     const help =
-      hint.help ?? param.description
+      (hint.help ?? param.description)
         ? chalk.dim(` — ${hint.help ?? param.description}`)
         : "";
 
@@ -681,9 +684,7 @@ export function registerPluginsCli(program: Command): void {
       if (!plugin) {
         console.log(`\n${chalk.red("Not found:")} ${name}`);
         console.log(
-          chalk.dim(
-            "Run 'milaidy plugins list' to see available plugins.\n",
-          ),
+          chalk.dim("Run 'milaidy plugins list' to see available plugins.\n"),
         );
         process.exitCode = 1;
         return;
@@ -692,14 +693,28 @@ export function registerPluginsCli(program: Command): void {
       const pluginId = String(plugin.id ?? "");
       const pluginName = String(plugin.name ?? pluginId);
       const params = plugin.pluginParameters as
-        | Record<string, { type?: string; description?: string; required?: boolean; sensitive?: boolean }>
+        | Record<
+            string,
+            {
+              type?: string;
+              description?: string;
+              required?: boolean;
+              sensitive?: boolean;
+            }
+          >
         | undefined;
-      const configUiHints = plugin.configUiHints as Record<string, { label?: string; help?: string; sensitive?: boolean }> | undefined;
+      const configUiHints = plugin.configUiHints as
+        | Record<string, { label?: string; help?: string; sensitive?: boolean }>
+        | undefined;
 
       // Display mode
       if (!opts.edit) {
-        console.log(`\n${chalk.bold(pluginName)} ${chalk.dim(`(${pluginId})`)}`);
-        console.log(chalk.dim("─".repeat(pluginName.length + pluginId.length + 3)));
+        console.log(
+          `\n${chalk.bold(pluginName)} ${chalk.dim(`(${pluginId})`)}`,
+        );
+        console.log(
+          chalk.dim("─".repeat(pluginName.length + pluginId.length + 3)),
+        );
 
         displayPluginConfig(
           {
@@ -801,11 +816,17 @@ export function registerPluginsCli(program: Command): void {
       if (!pluginsObj.entries || typeof pluginsObj.entries !== "object") {
         pluginsObj.entries = {};
       }
-      const entries = pluginsObj.entries as Record<string, Record<string, unknown>>;
+      const entries = pluginsObj.entries as Record<
+        string,
+        Record<string, unknown>
+      >;
       if (!entries[pluginId]) {
         entries[pluginId] = { enabled: true, config: {} };
       }
-      if (!entries[pluginId].config || typeof entries[pluginId].config !== "object") {
+      if (
+        !entries[pluginId].config ||
+        typeof entries[pluginId].config !== "object"
+      ) {
         entries[pluginId].config = {};
       }
       const pluginConfig = entries[pluginId].config as Record<string, unknown>;
@@ -821,9 +842,7 @@ export function registerPluginsCli(program: Command): void {
       console.log(
         `\n${chalk.green("Success!")} Configuration saved for ${pluginName}.`,
       );
-      console.log(
-        chalk.dim("Restart your agent to apply changes.\n"),
-      );
+      console.log(chalk.dim("Restart your agent to apply changes.\n"));
     });
 
   // ── open ────────────────────────────────────────────────────────────

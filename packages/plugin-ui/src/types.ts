@@ -5,43 +5,43 @@
 
 // ── Catalog types ───────────────────────────────────────────────────────
 export type {
-  FieldRenderProps,
-  FieldRenderer,
-  FieldDefinition,
-  FieldCatalog,
-  FieldRegistry,
-  ResolvedField,
-  JsonSchemaObject,
-  JsonSchemaProperty,
-  CatalogConfig,
   ActionDefinition,
   ActionHandler,
+  CatalogConfig,
+  FieldCatalog,
+  FieldDefinition,
+  FieldRegistry,
+  FieldRenderer,
+  FieldRenderProps,
+  JsonSchemaObject,
+  JsonSchemaProperty,
+  ResolvedField,
   ValidationFunction,
 } from "@app/components/config-catalog";
 
 // ── ConfigRenderer types ────────────────────────────────────────────────
 export type {
-  ConfigRendererProps,
   ConfigRendererHandle,
+  ConfigRendererProps,
 } from "@app/components/config-renderer";
 
 // ── Plugin SDK types ────────────────────────────────────────────────────
 export type {
   PluginConfigFieldProps,
-  PluginFieldRenderer,
   PluginConfigPageProps,
+  PluginFieldRenderer,
 } from "@app/components/plugin-ui";
 
 // ── Core UI types ───────────────────────────────────────────────────────
 export type {
+  ActionBinding,
   ConfigUiHint,
   ConfigUiHints,
-  ShowIfCondition,
-  VisibilityCondition,
-  LogicExpression,
   DynamicValue,
+  LogicExpression,
+  PluginUiTheme,
+  ShowIfCondition,
   ValidationCheck,
   ValidationConfig,
-  ActionBinding,
-  PluginUiTheme,
+  VisibilityCondition,
 } from "@app/types";

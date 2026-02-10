@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import type { MilaidyConfig } from "../../config/types.milaidy.js";
 import { theme } from "../../terminal/theme.js";
 
 export function registerConfigCli(program: Command) {
@@ -57,7 +58,7 @@ export function registerConfigCli(program: Command) {
       const { loadMilaidyConfig } = await import("../../config/config.js");
       const { buildConfigSchema } = await import("../../config/schema.js");
 
-      let config;
+      let config: MilaidyConfig | undefined;
       try {
         config = loadMilaidyConfig();
       } catch (err) {
@@ -82,10 +83,7 @@ export function registerConfigCli(program: Command) {
 /**
  * Flatten a nested object to dot-notation keys.
  */
-function flattenConfig(
-  obj: unknown,
-  prefix = "",
-): Record<string, unknown> {
+function flattenConfig(obj: unknown, prefix = ""): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   if (obj === null || typeof obj !== "object") {
@@ -119,7 +117,17 @@ function inferGroup(key: string): string {
  */
 function displayConfig(
   config: Record<string, unknown>,
-  uiHints: Record<string, { label?: string; help?: string; group?: string; sensitive?: boolean; advanced?: boolean; hidden?: boolean }>,
+  uiHints: Record<
+    string,
+    {
+      label?: string;
+      help?: string;
+      group?: string;
+      sensitive?: boolean;
+      advanced?: boolean;
+      hidden?: boolean;
+    }
+  >,
   opts: { showAdvanced: boolean },
 ): void {
   const flat = flattenConfig(config);
@@ -141,7 +149,7 @@ function displayConfig(
     if (!groups.has(group)) {
       groups.set(group, []);
     }
-    groups.get(group)!.push([key, value]);
+    groups.get(group)?.push([key, value]);
   }
 
   // Sort groups alphabetically

@@ -27,9 +27,9 @@ import {
   createSessionKeyProvider,
   resolveSessionKeyFromRoom,
 } from "../providers/session-bridge.js";
-import { generateCatalogPrompt } from "../shared/ui-catalog-prompt.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR } from "../providers/workspace.js";
 import { createWorkspaceProvider } from "../providers/workspace-provider.js";
+import { generateCatalogPrompt } from "../shared/ui-catalog-prompt.js";
 
 export type MilaidyPluginConfig = {
   workspaceDir?: string;
@@ -85,7 +85,9 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
       // the short id ("knowledge") so the agent outputs valid markers.
       const pluginLines = (runtime.plugins ?? []).map((p) => {
         const name = p.name ?? "";
-        const short = name.replace(/^@elizaos\/plugin-/, "").replace(/^plugin-/, "");
+        const short = name
+          .replace(/^@elizaos\/plugin-/, "")
+          .replace(/^plugin-/, "");
         return `- ${short} (${name})`;
       });
       return {
@@ -97,7 +99,7 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
           "### Plugin configuration forms",
           "When a user asks to configure, set up, or enable a plugin, include a `[CONFIG:pluginId]` marker in your response.",
           "The pluginId is the SHORT id from the list below (e.g. `telegram`, `knowledge`, `openai`).",
-          "Example: \"Let me pull up the configuration for the knowledge plugin. [CONFIG:knowledge]\"",
+          'Example: "Let me pull up the configuration for the knowledge plugin. [CONFIG:knowledge]"',
           "The marker will be replaced with an interactive config form in the UI.",
           "",
           "### Rich interactive UI",

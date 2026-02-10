@@ -204,7 +204,14 @@ interface LogEntry {
 type ResponseBlock =
   | { type: "text"; text: string }
   | { type: "ui-spec"; spec: Record<string, unknown>; raw: string }
-  | { type: "config-form"; pluginId: string; pluginName?: string; schema: Record<string, unknown>; hints?: Record<string, unknown>; values?: Record<string, unknown> };
+  | {
+      type: "config-form";
+      pluginId: string;
+      pluginName?: string;
+      schema: Record<string, unknown>;
+      hints?: Record<string, unknown>;
+      values?: Record<string, unknown>;
+    };
 
 /** Regex matching fenced JSON code blocks: ```json ... ``` or ``` ... ``` */
 const FENCED_JSON_RE_SERVER = /```(?:json)?\s*\n([\s\S]*?)```/g;
@@ -213,13 +220,25 @@ const FENCED_JSON_RE_SERVER = /```(?:json)?\s*\n([\s\S]*?)```/g;
 const CONFIG_MARKER_RE = /\[CONFIG:([^\]]+)\]/g;
 
 function tryParseJsonServer(raw: string): unknown {
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
-function isUiSpecObject(obj: unknown): obj is { root: string; elements: Record<string, unknown> } {
-  if (obj === null || typeof obj !== "object" || Array.isArray(obj)) return false;
+function isUiSpecObject(
+  obj: unknown,
+): obj is { root: string; elements: Record<string, unknown> } {
+  if (obj === null || typeof obj !== "object" || Array.isArray(obj))
+    return false;
   const c = obj as Record<string, unknown>;
-  return typeof c.root === "string" && c.elements !== null && typeof c.elements === "object" && !Array.isArray(c.elements);
+  return (
+    typeof c.root === "string" &&
+    c.elements !== null &&
+    typeof c.elements === "object" &&
+    !Array.isArray(c.elements)
+  );
 }
 
 /**
@@ -230,7 +249,7 @@ function isUiSpecObject(obj: unknown): obj is { root: string; elements: Record<s
  *
  * Returns { cleanText, blocks } where cleanText has UI blocks/markers removed.
  */
-function extractResponseBlocks(
+function _extractResponseBlocks(
   responseText: string,
   plugins: PluginEntry[],
 ): { cleanText: string; blocks: ResponseBlock[] } {
@@ -239,19 +258,28 @@ function extractResponseBlocks(
 
   // Pass 1: extract fenced UiSpec JSON blocks
   FENCED_JSON_RE_SERVER.lastIndex = 0;
-  const uiSpecRanges: Array<{ start: number; end: number; block: ResponseBlock }> = [];
-  let match: RegExpExecArray | null;
+  const uiSpecRanges: Array<{
+    start: number;
+    end: number;
+    block: ResponseBlock;
+  }> = [];
+  let match: RegExpExecArray | null = FENCED_JSON_RE_SERVER.exec(text);
 
-  while ((match = FENCED_JSON_RE_SERVER.exec(text)) !== null) {
+  while (match !== null) {
     const jsonContent = match[1].trim();
     const parsed = tryParseJsonServer(jsonContent);
     if (parsed !== null && isUiSpecObject(parsed)) {
       uiSpecRanges.push({
         start: match.index,
         end: match.index + match[0].length,
-        block: { type: "ui-spec", spec: parsed as Record<string, unknown>, raw: jsonContent },
+        block: {
+          type: "ui-spec",
+          spec: parsed as Record<string, unknown>,
+          raw: jsonContent,
+        },
       });
     }
+    match = FENCED_JSON_RE_SERVER.exec(text);
   }
 
   // Remove UiSpec blocks from text (reverse order to preserve indices)
@@ -265,9 +293,16 @@ function extractResponseBlocks(
 
   // Pass 2: extract [CONFIG:pluginId] markers
   CONFIG_MARKER_RE.lastIndex = 0;
-  const configMarkers: Array<{ start: number; end: number; pluginId: string }> = [];
-  while ((match = CONFIG_MARKER_RE.exec(text)) !== null) {
-    configMarkers.push({ start: match.index, end: match.index + match[0].length, pluginId: match[1].trim() });
+  const configMarkers: Array<{ start: number; end: number; pluginId: string }> =
+    [];
+  match = CONFIG_MARKER_RE.exec(text);
+  while (match !== null) {
+    configMarkers.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      pluginId: match[1].trim(),
+    });
+    match = CONFIG_MARKER_RE.exec(text);
   }
 
   if (configMarkers.length > 0) {
@@ -278,8 +313,13 @@ function extractResponseBlocks(
         const schema: Record<string, unknown> = {};
         const values: Record<string, unknown> = {};
         for (const param of plugin.parameters) {
-          schema[param.key] = { type: param.type, description: param.description, required: param.required };
-          if (param.currentValue !== null) values[param.key] = param.currentValue;
+          schema[param.key] = {
+            type: param.type,
+            description: param.description,
+            required: param.required,
+          };
+          if (param.currentValue !== null)
+            values[param.key] = param.currentValue;
         }
         blocks.push({
           type: "config-form",
@@ -395,7 +435,7 @@ function buildParamDefs(
  * determine type, sensitivity, requirement level, and a human-readable
  * description.
  */
-function inferParamDefs(configKeys: string[]): PluginParamDef[] {
+function _inferParamDefs(configKeys: string[]): PluginParamDef[] {
   return configKeys.map((key) => {
     const upper = key.toUpperCase();
 
@@ -573,9 +613,21 @@ interface SecretEntry {
 }
 
 const AI_PROVIDERS = new Set([
-  "OPENAI", "ANTHROPIC", "GOOGLE", "MISTRAL", "GROQ", "COHERE",
-  "TOGETHER", "FIREWORKS", "PERPLEXITY", "DEEPSEEK", "XAI",
-  "OPENROUTER", "ELEVENLABS", "REPLICATE", "HUGGINGFACE",
+  "OPENAI",
+  "ANTHROPIC",
+  "GOOGLE",
+  "MISTRAL",
+  "GROQ",
+  "COHERE",
+  "TOGETHER",
+  "FIREWORKS",
+  "PERPLEXITY",
+  "DEEPSEEK",
+  "XAI",
+  "OPENROUTER",
+  "ELEVENLABS",
+  "REPLICATE",
+  "HUGGINGFACE",
 ]);
 
 function inferSecretCategory(key: string): string {
@@ -636,7 +688,11 @@ function aggregateSecrets(plugins: PluginEntry[]): SecretEntry[] {
 
       const existing = map.get(param.key);
       if (existing) {
-        existing.usedBy.push({ pluginId: plugin.id, pluginName: plugin.name, enabled: plugin.enabled });
+        existing.usedBy.push({
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          enabled: plugin.enabled,
+        });
         // Only mark required if an *enabled* plugin requires it
         if (param.required && plugin.enabled) existing.required = true;
       } else {
@@ -649,8 +705,14 @@ function aggregateSecrets(plugins: PluginEntry[]): SecretEntry[] {
           sensitive: true,
           required: param.required && plugin.enabled,
           isSet,
-          maskedValue: isSet ? maskValue(envValue!) : null,
-          usedBy: [{ pluginId: plugin.id, pluginName: plugin.name, enabled: plugin.enabled }],
+          maskedValue: isSet ? maskValue(envValue ?? "") : null,
+          usedBy: [
+            {
+              pluginId: plugin.id,
+              pluginName: plugin.name,
+              enabled: plugin.enabled,
+            },
+          ],
         });
       }
     }
@@ -3292,7 +3354,11 @@ async function handleRequest(
       const allowedParamKeys = new Set(plugin.parameters.map((p) => p.key));
 
       for (const [key, value] of Object.entries(body.config)) {
-        if (typeof value === "string" && value.trim()) {
+        if (
+          allowedParamKeys.has(key) &&
+          typeof value === "string" &&
+          value.trim()
+        ) {
           process.env[key] = value;
         }
       }
@@ -3409,9 +3475,13 @@ async function handleRequest(
       for (const plugin of allPlugins) {
         const suffix = `plugin-${plugin.id}`;
         const packageName = `@elizaos/plugin-${plugin.id}`;
-        plugin.enabled = loadedNames.some((name) =>
-          name === plugin.id || name === suffix || name === packageName ||
-          name.endsWith(`/${suffix}`) || name.includes(plugin.id),
+        plugin.enabled = loadedNames.some(
+          (name) =>
+            name === plugin.id ||
+            name === suffix ||
+            name === packageName ||
+            name.endsWith(`/${suffix}`) ||
+            name.includes(plugin.id),
         );
       }
     }
@@ -3423,7 +3493,10 @@ async function handleRequest(
 
   // ── PUT /api/secrets ─────────────────────────────────────────────────
   if (method === "PUT" && pathname === "/api/secrets") {
-    const body = await readJsonBody<{ secrets: Record<string, string> }>(req, res);
+    const body = await readJsonBody<{ secrets: Record<string, string> }>(
+      req,
+      res,
+    );
     if (!body) return;
     if (!body.secrets || typeof body.secrets !== "object") {
       error(res, "Missing or invalid 'secrets' object", 400);
@@ -3584,7 +3657,8 @@ async function handleRequest(
 
   // ── POST /api/plugins/:id/test ────────────────────────────────────────
   // Test a plugin's connection / configuration validity.
-  const pluginTestMatch = method === "POST" && pathname.match(/^\/api\/plugins\/([^/]+)\/test$/);
+  const pluginTestMatch =
+    method === "POST" && pathname.match(/^\/api\/plugins\/([^/]+)\/test$/);
   if (pluginTestMatch) {
     const pluginId = decodeURIComponent(pluginTestMatch[1]);
     const startMs = Date.now();
@@ -3592,28 +3666,41 @@ async function handleRequest(
     try {
       // Find the plugin in the runtime
       const allPlugins = state.runtime?.plugins ?? [];
-      const plugin = allPlugins.find((p: { id?: string; name?: string }) =>
-        p.id === pluginId || p.name === pluginId
+      const plugin = allPlugins.find(
+        (p: { id?: string; name?: string }) =>
+          p.id === pluginId || p.name === pluginId,
       );
 
       if (!plugin) {
-        json(res, {
-          success: false,
-          pluginId,
-          error: "Plugin not found or not loaded",
-          durationMs: Date.now() - startMs,
-        }, 404);
+        json(
+          res,
+          {
+            success: false,
+            pluginId,
+            error: "Plugin not found or not loaded",
+            durationMs: Date.now() - startMs,
+          },
+          404,
+        );
         return;
       }
 
       // Check if plugin exposes a test/health method
-      const testFn = (plugin as unknown as Record<string, unknown>).testConnection ?? (plugin as unknown as Record<string, unknown>).healthCheck;
+      const testFn =
+        (plugin as unknown as Record<string, unknown>).testConnection ??
+        (plugin as unknown as Record<string, unknown>).healthCheck;
       if (typeof testFn === "function") {
-        const result = await (testFn as () => Promise<{ ok: boolean; message?: string }>)();
+        const result = await (
+          testFn as () => Promise<{ ok: boolean; message?: string }>
+        )();
         json(res, {
           success: result.ok !== false,
           pluginId,
-          message: result.message ?? (result.ok !== false ? "Connection successful" : "Connection failed"),
+          message:
+            result.message ??
+            (result.ok !== false
+              ? "Connection successful"
+              : "Connection failed"),
           durationMs: Date.now() - startMs,
         });
         return;
@@ -3627,12 +3714,16 @@ async function handleRequest(
         durationMs: Date.now() - startMs,
       });
     } catch (err) {
-      json(res, {
-        success: false,
-        pluginId,
-        error: err instanceof Error ? err.message : String(err),
-        durationMs: Date.now() - startMs,
-      }, 500);
+      json(
+        res,
+        {
+          success: false,
+          pluginId,
+          error: err instanceof Error ? err.message : String(err),
+          durationMs: Date.now() - startMs,
+        },
+        500,
+      );
     }
     return;
   }

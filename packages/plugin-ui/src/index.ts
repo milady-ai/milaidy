@@ -28,102 +28,88 @@
  * @module @elizaos/plugin-ui
  */
 
-// ── Catalog & Registry ──────────────────────────────────────────────────
-export {
-  // Factory functions
-  defineCatalog,
-  defineRegistry,
-  resolveFields,
-
-  // Data binding utilities
-  getByPath,
-  setByPath,
-  resolveDynamic,
-  findFormValue,
-  interpolateString,
-
-  // Rich visibility utilities
-  evaluateVisibility,
-  evaluateLogicExpression,
-  evaluateShowIf,
-  visibility,
-
-  // Validation utilities
-  runValidation,
-  builtInValidators,
-  check,
-
-  // Defaults
-  defaultCatalog,
-} from "@app/components/config-catalog";
-
 export type {
-  // Core types
-  FieldRenderProps,
-  FieldRenderer,
-  FieldDefinition,
-  FieldCatalog,
-  FieldRegistry,
-  ResolvedField,
-  JsonSchemaObject,
-  JsonSchemaProperty,
-  CatalogConfig,
-
   // Action types
   ActionDefinition,
   ActionHandler,
+  CatalogConfig,
+  FieldCatalog,
+  FieldDefinition,
+  FieldRegistry,
+  FieldRenderer,
+  // Core types
+  FieldRenderProps,
+  JsonSchemaObject,
+  JsonSchemaProperty,
+  ResolvedField,
   ValidationFunction,
+} from "@app/components/config-catalog";
+// ── Catalog & Registry ──────────────────────────────────────────────────
+export {
+  builtInValidators,
+  check,
+  // Defaults
+  defaultCatalog,
+  // Factory functions
+  defineCatalog,
+  defineRegistry,
+  evaluateLogicExpression,
+  evaluateShowIf,
+  // Rich visibility utilities
+  evaluateVisibility,
+  findFormValue,
+  // Data binding utilities
+  getByPath,
+  interpolateString,
+  resolveDynamic,
+  resolveFields,
+  // Validation utilities
+  runValidation,
+  setByPath,
+  visibility,
 } from "@app/components/config-catalog";
 
 // ── Field Renderers ─────────────────────────────────────────────────────
 export {
-  defaultRenderers,
   ConfigField,
+  defaultRenderers,
 } from "@app/components/config-field";
-
+export type {
+  ConfigRendererHandle,
+  ConfigRendererProps,
+} from "@app/components/config-renderer";
 // ── ConfigRenderer ──────────────────────────────────────────────────────
 export {
   ConfigRenderer,
   defaultRegistry,
   useConfigValidation,
 } from "@app/components/config-renderer";
-
 export type {
-  ConfigRendererProps,
-  ConfigRendererHandle,
-} from "@app/components/config-renderer";
-
-// ── Types ───────────────────────────────────────────────────────────────
-export {
-  DEFAULT_PLUGIN_UI_THEME,
-} from "@app/types";
-
-export type {
-  ConfigUiHint,
-  ConfigUiHints,
-  ShowIfCondition,
-  VisibilityCondition,
-  LogicExpression,
-  DynamicValue,
-  ValidationCheck,
-  ValidationConfig,
-  ActionBinding,
-  PluginUiTheme,
-} from "@app/types";
-
+  PluginConfigFieldProps,
+  PluginConfigPageProps,
+  PluginFieldRenderer,
+} from "@app/components/plugin-ui";
 // ── Plugin-specific types ───────────────────────────────────────────────
 // Re-export from the existing SDK barrel file in apps/app
 export {
-  createFieldType,
   adaptRenderer,
+  createFieldType,
   extendRegistry,
 } from "@app/components/plugin-ui";
-
 export type {
-  PluginConfigFieldProps,
-  PluginFieldRenderer,
-  PluginConfigPageProps,
-} from "@app/components/plugin-ui";
+  ActionBinding,
+  ConfigUiHint,
+  ConfigUiHints,
+  DynamicValue,
+  LogicExpression,
+  PluginUiTheme,
+  ShowIfCondition,
+  ValidationCheck,
+  ValidationConfig,
+  VisibilityCondition,
+} from "@app/types";
+// ── Types ───────────────────────────────────────────────────────────────
+export { DEFAULT_PLUGIN_UI_THEME } from "@app/types";
 
 // ── Zod re-export for field type definitions ────────────────────────────
 export { z } from "zod";

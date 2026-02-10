@@ -1999,7 +1999,9 @@ export async function startEliza(
         for (const skill of skills) {
           if (typeof skill.description !== "string") {
             skill.description =
-              skill.description == null ? "" : JSON.stringify(skill.description);
+              skill.description == null
+                ? ""
+                : JSON.stringify(skill.description);
           }
         }
         return skills;

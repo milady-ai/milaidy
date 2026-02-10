@@ -345,12 +345,14 @@ export const COMPONENT_CATALOG: Record<string, ComponentMeta> = {
       },
       type: {
         type: '"single" | "multiple"',
-        description: "Selection mode. Single selects one value, multiple allows many.",
+        description:
+          "Selection mode. Single selects one value, multiple allows many.",
         required: false,
       },
       statePath: {
         type: "string",
-        description: "Dot-path into spec state. String for single, string[] for multiple.",
+        description:
+          "Dot-path into spec state. String for single, string[] for multiple.",
         required: false,
       },
     },
@@ -779,7 +781,8 @@ export const COMPONENT_CATALOG: Record<string, ComponentMeta> = {
       },
       openPath: {
         type: "string",
-        description: "Dot-path into spec state (boolean) that controls open/close",
+        description:
+          "Dot-path into spec state (boolean) that controls open/close",
         required: true,
       },
     },
@@ -801,7 +804,8 @@ export const COMPONENT_CATALOG: Record<string, ComponentMeta> = {
       },
       openPath: {
         type: "string",
-        description: "Dot-path into spec state (boolean) that controls open/close",
+        description:
+          "Dot-path into spec state (boolean) that controls open/close",
         required: true,
       },
     },
@@ -887,7 +891,9 @@ Element IDs must be unique strings. The \`children\` array references other elem
     const propDescs: string[] = [];
     for (const [prop, info] of Object.entries(meta.props)) {
       const req = info.required ? " (required)" : "";
-      propDescs.push(`    - ${prop}: ${info.type}${req} -- ${info.description}`);
+      propDescs.push(
+        `    - ${prop}: ${info.type}${req} -- ${info.description}`,
+      );
     }
     const slotsLine = meta.slots
       ? `  Slots: ${meta.slots.join(", ")} (accepts children)`

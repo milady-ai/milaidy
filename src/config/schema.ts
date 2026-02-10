@@ -93,10 +93,24 @@ export type PluginUiMetadata = {
     string,
     Pick<
       ConfigUiHint,
-      | "label" | "help" | "advanced" | "sensitive" | "placeholder"
-      | "type" | "icon" | "readonly" | "hidden" | "width"
-      | "pattern" | "patternError" | "showIf" | "options"
-      | "min" | "max" | "step" | "unit"
+      | "label"
+      | "help"
+      | "advanced"
+      | "sensitive"
+      | "placeholder"
+      | "type"
+      | "icon"
+      | "readonly"
+      | "hidden"
+      | "width"
+      | "pattern"
+      | "patternError"
+      | "showIf"
+      | "options"
+      | "min"
+      | "max"
+      | "step"
+      | "unit"
     >
   >;
   configSchema?: JsonSchemaNode;
