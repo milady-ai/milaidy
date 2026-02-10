@@ -102,15 +102,16 @@ export function CharacterView() {
   return (
     <div>
       <h2 className="text-lg font-bold">Character</h2>
-      <p className="text-[13px] text-[var(--muted)] mb-5">Agent identity, personality, and appearance.</p>
+      {/* Note: "Soul" = system prompt, "Identity" = bio in Eliza terms */}
+      <p className="text-[13px] text-[var(--muted)] mb-5">Soul, identity, and appearance.</p>
 
       {/* ═══ CHARACTER IDENTITY ═══ */}
       <div className="mt-6 p-4 border border-[var(--border)] bg-[var(--card)]">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <div className="font-bold text-sm">Identity</div>
+            <div className="font-bold text-sm">Soul &amp; Identity</div>
             <div className="text-xs text-[var(--muted)] mt-0.5">
-              Define your agent&apos;s name, personality, knowledge, and communication style.
+              Define your agent&apos;s name, soul, identity, and communication style.
             </div>
           </div>
           <button
@@ -152,34 +153,34 @@ export function CharacterView() {
               </div>
             </div>
 
-            {/* Bio */}
+            {/* Identity (bio) */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <label className="font-semibold text-xs">Bio</label>
+                <label className="font-semibold text-xs">Identity</label>
                 <button
                   className="text-[10px] px-1.5 py-0.5 border border-[var(--border)] bg-[var(--card)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
                   onClick={() => void handleGenerate("bio")}
                   disabled={generating === "bio"}
-                  title="Generate bio using AI"
+                  title="Generate identity using AI"
                   type="button"
                 >
                   {generating === "bio" ? "generating..." : "generate"}
                 </button>
               </div>
-              <div className="text-[11px] text-[var(--muted)]">Biography — one paragraph per line</div>
+              <div className="text-[11px] text-[var(--muted)]">Who your agent is — personality, background, vibes. One paragraph per line.</div>
               <textarea
                 value={bioText}
                 rows={4}
-                placeholder="Write your agent's bio here. One paragraph per line."
+                placeholder="Describe who your agent is. Their personality, background, how they see the world."
                 onChange={(e) => handleCharacterFieldInput("bio", e.target.value)}
                 className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs font-inherit resize-y leading-relaxed focus:border-[var(--accent)] focus:outline-none"
               />
             </div>
 
-            {/* System Prompt */}
+            {/* Soul (system prompt) */}
             <div className="flex flex-col gap-1">
-              <label className="font-semibold text-xs">System Prompt</label>
-              <div className="text-[11px] text-[var(--muted)]">Core behavior instructions for the agent (max 10,000 characters)</div>
+              <label className="font-semibold text-xs">Soul</label>
+              <div className="text-[11px] text-[var(--muted)]">How your agent thinks and behaves — their core essence (max 10,000 characters)</div>
               <textarea
                 value={d.system ?? ""}
                 rows={6}
