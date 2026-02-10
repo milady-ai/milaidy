@@ -1022,12 +1022,17 @@ async function runFirstTimeSetup(
 
             // Use execFile (not exec) to avoid shell interpretation.
             // On Windows, "start" is a cmd built-in so we invoke via cmd.exe.
-            if (process.platform === "win32") {
-              cp.execFile("cmd", ["/c", "start", "", safeUrl]);
-            } else {
-              const cmd = process.platform === "darwin" ? "open" : "xdg-open";
-              cp.execFile(cmd, [safeUrl]);
-            }
+            const child = process.platform === "win32"
+              ? cp.execFile("cmd", ["/c", "start", "", safeUrl])
+              : cp.execFile(
+                  process.platform === "darwin" ? "open" : "xdg-open",
+                  [safeUrl],
+                );
+            // Handle missing binary (e.g. xdg-open on minimal Linux) to
+            // avoid an unhandled error crash — fall back to printing the URL.
+            child.on("error", () => {
+              clack.log.message(`Open this URL in your browser:\n  ${safeUrl}`);
+            });
           })
           .catch(() => {
             clack.log.message(`Open this URL in your browser:\n  ${url}`);
