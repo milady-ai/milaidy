@@ -23,6 +23,13 @@ export function OnboardingWizard() {
     onboardingApiKey,
     onboardingOpenRouterModel,
     onboardingTelegramToken,
+    onboardingDiscordToken,
+    onboardingWhatsAppSessionPath,
+    onboardingTwilioAccountSid,
+    onboardingTwilioAuthToken,
+    onboardingTwilioPhoneNumber,
+    onboardingBlooioApiKey,
+    onboardingBlooioPhoneNumber,
     onboardingSelectedChains,
     onboardingRpcSelections,
     onboardingRpcKeys,
@@ -166,12 +173,11 @@ export function OnboardingWizard() {
 
       case "avatar":
         return (
-          <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
+          <div className="mx-auto mt-10 text-center font-body">
             <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[360px] relative text-[15px] text-txt leading-relaxed">
-              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Choose Your Avatar</h2>
-              <p className="text-xs text-muted mt-1">Pick a milady or upload your own .vrm</p>
+              <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Choose Your Agent</h2>
             </div>
-            <div className="max-w-[400px] mx-auto">
+            <div className="mx-auto">
               <AvatarSelector
                 selected={onboardingAvatar}
                 onSelect={(i) => setState("onboardingAvatar", i)}
@@ -518,13 +524,18 @@ export function OnboardingWizard() {
           <div className="max-w-[500px] mx-auto mt-10 text-center font-body">
             <div className="onboarding-speech bg-card border border-border rounded-xl px-5 py-4 mx-auto mb-6 max-w-[360px] relative text-[15px] text-txt leading-relaxed">
               <h2 className="text-[28px] font-normal mb-1 text-txt-strong">Connectors</h2>
-              <p className="text-xs text-muted mt-1">Optional — connect your agent to messaging platforms</p>
+              <p className="text-xs text-muted mt-1">All connectors are optional — configure any you want to use</p>
             </div>
             <div className="flex flex-col gap-3 text-left max-w-[360px] mx-auto">
               {/* Telegram */}
-              <div className="px-4 py-3 border border-border bg-card">
-                <div className="font-bold text-sm text-txt-strong mb-1">Telegram</div>
-                <p className="text-xs text-muted mb-3">
+              <div className={`px-4 py-3 border bg-card transition-colors ${onboardingTelegramToken.trim() ? "border-accent" : "border-border"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-sm text-txt-strong">Telegram</div>
+                  {onboardingTelegramToken.trim() && (
+                    <span className="text-[10px] text-accent border border-accent px-1.5 py-0.5">Configured</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mb-3 mt-1">
                   Get a bot token from{" "}
                   <a
                     href="https://t.me/BotFather"
@@ -545,22 +556,134 @@ export function OnboardingWizard() {
                 />
               </div>
 
-              {/* Discord — Coming Soon */}
-              <div className="px-4 py-3 border border-border bg-card opacity-50">
+              {/* Discord */}
+              <div className={`px-4 py-3 border bg-card transition-colors ${onboardingDiscordToken.trim() ? "border-accent" : "border-border"}`}>
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-sm text-txt-strong">Discord</div>
-                  <span className="text-[10px] uppercase tracking-wider text-muted border border-border px-1.5 py-0.5">Coming Soon</span>
+                  {onboardingDiscordToken.trim() && (
+                    <span className="text-[10px] text-accent border border-accent px-1.5 py-0.5">Configured</span>
+                  )}
                 </div>
-                <p className="text-xs text-muted mt-1">Plugin not yet available</p>
+                <p className="text-xs text-muted mb-3 mt-1">
+                  Create a bot at the{" "}
+                  <a
+                    href="https://discord.com/developers/applications"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline"
+                  >
+                    Discord Developer Portal
+                  </a>{" "}
+                  and copy the bot token
+                </p>
+                <input
+                  type="password"
+                  value={onboardingDiscordToken}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingDiscordToken", e.target.value)}
+                  placeholder="Discord bot token"
+                  className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                />
               </div>
 
-              {/* WhatsApp — Coming Soon */}
-              <div className="px-4 py-3 border border-border bg-card opacity-50">
+              {/* WhatsApp */}
+              <div className={`px-4 py-3 border bg-card transition-colors ${onboardingWhatsAppSessionPath.trim() ? "border-accent" : "border-border"}`}>
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-sm text-txt-strong">WhatsApp</div>
-                  <span className="text-[10px] uppercase tracking-wider text-muted border border-border px-1.5 py-0.5">Coming Soon</span>
+                  {onboardingWhatsAppSessionPath.trim() && (
+                    <span className="text-[10px] text-accent border border-accent px-1.5 py-0.5">Configured</span>
+                  )}
                 </div>
-                <p className="text-xs text-muted mt-1">Plugin not yet available</p>
+                <p className="text-xs text-muted mb-3 mt-1">
+                  Connects via Baileys — provide a session directory path. QR pairing will start on first launch.
+                </p>
+                <input
+                  type="text"
+                  value={onboardingWhatsAppSessionPath}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingWhatsAppSessionPath", e.target.value)}
+                  placeholder="~/.milaidy/whatsapp-session"
+                  className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                />
+              </div>
+
+              {/* Twilio (SMS / Green Text) */}
+              <div className={`px-4 py-3 border bg-card transition-colors ${onboardingTwilioAccountSid.trim() && onboardingTwilioAuthToken.trim() ? "border-accent" : "border-border"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-sm text-txt-strong">Twilio SMS</div>
+                  {onboardingTwilioAccountSid.trim() && onboardingTwilioAuthToken.trim() && (
+                    <span className="text-[10px] text-accent border border-accent px-1.5 py-0.5">Configured</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mb-3 mt-1">
+                  SMS green-text messaging via{" "}
+                  <a
+                    href="https://www.twilio.com/console"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline"
+                  >
+                    Twilio Console
+                  </a>
+                </p>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="password"
+                    value={onboardingTwilioAccountSid}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingTwilioAccountSid", e.target.value)}
+                    placeholder="Account SID"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                  <input
+                    type="password"
+                    value={onboardingTwilioAuthToken}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingTwilioAuthToken", e.target.value)}
+                    placeholder="Auth Token"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                  <input
+                    type="tel"
+                    value={onboardingTwilioPhoneNumber}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingTwilioPhoneNumber", e.target.value)}
+                    placeholder="+1234567890 (Twilio phone number)"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Blooio (iMessage / Blue Text) */}
+              <div className={`px-4 py-3 border bg-card transition-colors ${onboardingBlooioApiKey.trim() ? "border-accent" : "border-border"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-sm text-txt-strong">Blooio iMessage</div>
+                  {onboardingBlooioApiKey.trim() && (
+                    <span className="text-[10px] text-accent border border-accent px-1.5 py-0.5">Configured</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mb-3 mt-1">
+                  Blue-text iMessage integration via{" "}
+                  <a
+                    href="https://blooio.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline"
+                  >
+                    Blooio
+                  </a>
+                </p>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="password"
+                    value={onboardingBlooioApiKey}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingBlooioApiKey", e.target.value)}
+                    placeholder="Blooio API key"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                  <input
+                    type="tel"
+                    value={onboardingBlooioPhoneNumber}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setState("onboardingBlooioPhoneNumber", e.target.value)}
+                    placeholder="+1234567890 (your phone number)"
+                    className="w-full px-3 py-2 border border-border bg-card text-sm focus:border-accent focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
           </div>

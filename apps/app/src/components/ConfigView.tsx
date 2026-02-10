@@ -459,25 +459,86 @@ export function ConfigView() {
   const [telegramTokenVisible, setTelegramTokenVisible] = useState(false);
   const [telegramTokenDirty, setTelegramTokenDirty] = useState(false);
   const [telegramMaskedToken, setTelegramMaskedToken] = useState<string | null>(null);
+  // Discord
+  const [discordTokenInput, setDiscordTokenInput] = useState("");
+  const [discordTokenVisible, setDiscordTokenVisible] = useState(false);
+  const [discordTokenDirty, setDiscordTokenDirty] = useState(false);
+  const [discordMaskedToken, setDiscordMaskedToken] = useState<string | null>(null);
+  // WhatsApp
+  const [whatsappSessionInput, setWhatsappSessionInput] = useState("");
+  // Twilio
+  const [twilioSidInput, setTwilioSidInput] = useState("");
+  const [twilioSidVisible, setTwilioSidVisible] = useState(false);
+  const [twilioSidDirty, setTwilioSidDirty] = useState(false);
+  const [twilioMaskedSid, setTwilioMaskedSid] = useState<string | null>(null);
+  const [twilioAuthInput, setTwilioAuthInput] = useState("");
+  const [twilioPhoneInput, setTwilioPhoneInput] = useState("");
+  // Blooio
+  const [blooioKeyInput, setBlooioKeyInput] = useState("");
+  const [blooioKeyVisible, setBlooioKeyVisible] = useState(false);
+  const [blooioKeyDirty, setBlooioKeyDirty] = useState(false);
+  const [blooioMaskedKey, setBlooioMaskedKey] = useState<string | null>(null);
+  const [blooioPhoneInput, setBlooioPhoneInput] = useState("");
+
   const [saveBusy, setSaveBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteModalConnector, setDeleteModalConnector] = useState<string | null>(null);
 
   const loadConnectors = useCallback(async () => {
     setChannelsLoading(true);
     setChannelsError(null);
     try {
       const { connectors } = await client.getConnectors();
+      const state: Record<string, { configured: boolean; maskedToken?: string | null }> = {};
+
+      // Telegram
       const tg = (connectors?.telegram ?? {}) as Record<string, string>;
       const hasTg = Boolean(tg.botToken?.trim());
-      const masked = hasTg ? `••••••${tg.botToken.slice(-4)}` : null;
-      setChannelsState({
-        telegram: { configured: hasTg, maskedToken: masked },
-      });
-      setTelegramMaskedToken(masked);
-      setTelegramTokenInput(masked ?? "");
+      const tgMasked = hasTg ? `••••••${tg.botToken.slice(-4)}` : null;
+      state.telegram = { configured: hasTg, maskedToken: tgMasked };
+      setTelegramMaskedToken(tgMasked);
+      setTelegramTokenInput(tgMasked ?? "");
       setTelegramTokenDirty(false);
+
+      // Discord
+      const dc = (connectors?.discord ?? {}) as Record<string, string>;
+      const hasDc = Boolean(dc.token?.trim());
+      const dcMasked = hasDc ? `••••••${dc.token.slice(-4)}` : null;
+      state.discord = { configured: hasDc, maskedToken: dcMasked };
+      setDiscordMaskedToken(dcMasked);
+      setDiscordTokenInput(dcMasked ?? "");
+      setDiscordTokenDirty(false);
+
+      // WhatsApp
+      const wa = (connectors?.whatsapp ?? {}) as Record<string, string>;
+      const hasWa = Boolean(wa.sessionPath?.trim());
+      state.whatsapp = { configured: hasWa };
+      setWhatsappSessionInput(wa.sessionPath ?? "");
+
+      // Twilio
+      const tw = (connectors?.twilio ?? {}) as Record<string, string>;
+      const hasTw = Boolean(tw.accountSid?.trim() && tw.authToken?.trim());
+      const twMasked = hasTw ? `••••••${tw.accountSid.slice(-4)}` : null;
+      state.twilio = { configured: hasTw, maskedToken: twMasked };
+      setTwilioMaskedSid(twMasked);
+      setTwilioSidInput(twMasked ?? "");
+      setTwilioSidDirty(false);
+      setTwilioAuthInput("");
+      setTwilioPhoneInput(tw.phoneNumber ?? "");
+
+      // Blooio
+      const bl = (connectors?.blooio ?? {}) as Record<string, string>;
+      const hasBl = Boolean(bl.apiKey?.trim());
+      const blMasked = hasBl ? `••••••${bl.apiKey.slice(-4)}` : null;
+      state.blooio = { configured: hasBl, maskedToken: blMasked };
+      setBlooioMaskedKey(blMasked);
+      setBlooioKeyInput(blMasked ?? "");
+      setBlooioKeyDirty(false);
+      setBlooioPhoneInput(bl.phoneNumber ?? "");
+
+      setChannelsState(state);
     } catch (err) {
       setChannelsError(err instanceof Error ? err.message : "Failed to load connectors");
     }
@@ -534,13 +595,180 @@ export function ConfigView() {
     setDeleteBusy(false);
   }, [loadConnectors]);
 
+  // ── Discord save / delete ─────────────────────────────────────────────
+  const handleDiscordSave = useCallback(async () => {
+    const token = discordTokenInput.trim();
+    if (!token || token.startsWith("••••")) {
+      setFeedback({ type: "error", text: "Enter a new Discord bot token before saving." });
+      return;
+    }
+    setSaveBusy(true);
+    setFeedback(null);
+    try {
+      await client.saveConnector("discord", { token });
+      const masked = `••••••${token.slice(-4)}`;
+      setDiscordMaskedToken(masked);
+      setDiscordTokenInput(masked);
+      setDiscordTokenDirty(false);
+      setFeedback({ type: "success", text: "Discord connector saved. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to save Discord connector." });
+    }
+    setSaveBusy(false);
+  }, [discordTokenInput, loadConnectors]);
+
+  const handleDiscordDelete = useCallback(async () => {
+    setDeleteBusy(true);
+    setFeedback(null);
+    try {
+      await client.deleteConnector("discord");
+      setChannelsState((prev) => ({ ...prev, discord: { configured: false, maskedToken: null } }));
+      setDiscordMaskedToken(null);
+      setDiscordTokenInput("");
+      setDiscordTokenDirty(false);
+      setDeleteModalOpen(false);
+      setFeedback({ type: "success", text: "Discord connector deleted. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to delete Discord connector." });
+    }
+    setDeleteBusy(false);
+  }, [loadConnectors]);
+
+  // ── WhatsApp save / delete ────────────────────────────────────────────
+  const handleWhatsappSave = useCallback(async () => {
+    const sessionPath = whatsappSessionInput.trim();
+    if (!sessionPath) {
+      setFeedback({ type: "error", text: "Enter a session path before saving." });
+      return;
+    }
+    setSaveBusy(true);
+    setFeedback(null);
+    try {
+      await client.saveConnector("whatsapp", { sessionPath });
+      setFeedback({ type: "success", text: "WhatsApp connector saved. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to save WhatsApp connector." });
+    }
+    setSaveBusy(false);
+  }, [whatsappSessionInput, loadConnectors]);
+
+  const handleWhatsappDelete = useCallback(async () => {
+    setDeleteBusy(true);
+    setFeedback(null);
+    try {
+      await client.deleteConnector("whatsapp");
+      setChannelsState((prev) => ({ ...prev, whatsapp: { configured: false } }));
+      setWhatsappSessionInput("");
+      setDeleteModalOpen(false);
+      setFeedback({ type: "success", text: "WhatsApp connector deleted. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to delete WhatsApp connector." });
+    }
+    setDeleteBusy(false);
+  }, [loadConnectors]);
+
+  // ── Twilio save / delete ──────────────────────────────────────────────
+  const handleTwilioSave = useCallback(async () => {
+    const sid = twilioSidInput.trim();
+    const auth = twilioAuthInput.trim();
+    if (!sid || sid.startsWith("••••") || !auth) {
+      setFeedback({ type: "error", text: "Enter Twilio Account SID and Auth Token before saving." });
+      return;
+    }
+    setSaveBusy(true);
+    setFeedback(null);
+    try {
+      const config: Record<string, string> = { accountSid: sid, authToken: auth };
+      if (twilioPhoneInput.trim()) config.phoneNumber = twilioPhoneInput.trim();
+      await client.saveConnector("twilio", config);
+      const masked = `••••••${sid.slice(-4)}`;
+      setTwilioMaskedSid(masked);
+      setTwilioSidInput(masked);
+      setTwilioSidDirty(false);
+      setTwilioAuthInput("");
+      setFeedback({ type: "success", text: "Twilio connector saved. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to save Twilio connector." });
+    }
+    setSaveBusy(false);
+  }, [twilioSidInput, twilioAuthInput, twilioPhoneInput, loadConnectors]);
+
+  const handleTwilioDelete = useCallback(async () => {
+    setDeleteBusy(true);
+    setFeedback(null);
+    try {
+      await client.deleteConnector("twilio");
+      setChannelsState((prev) => ({ ...prev, twilio: { configured: false, maskedToken: null } }));
+      setTwilioMaskedSid(null);
+      setTwilioSidInput("");
+      setTwilioSidDirty(false);
+      setTwilioAuthInput("");
+      setTwilioPhoneInput("");
+      setDeleteModalOpen(false);
+      setFeedback({ type: "success", text: "Twilio connector deleted. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to delete Twilio connector." });
+    }
+    setDeleteBusy(false);
+  }, [loadConnectors]);
+
+  // ── Blooio save / delete ──────────────────────────────────────────────
+  const handleBlooioSave = useCallback(async () => {
+    const apiKey = blooioKeyInput.trim();
+    if (!apiKey || apiKey.startsWith("••••")) {
+      setFeedback({ type: "error", text: "Enter a Blooio API key before saving." });
+      return;
+    }
+    setSaveBusy(true);
+    setFeedback(null);
+    try {
+      const config: Record<string, string> = { apiKey };
+      if (blooioPhoneInput.trim()) config.phoneNumber = blooioPhoneInput.trim();
+      await client.saveConnector("blooio", config);
+      const masked = `••••••${apiKey.slice(-4)}`;
+      setBlooioMaskedKey(masked);
+      setBlooioKeyInput(masked);
+      setBlooioKeyDirty(false);
+      setFeedback({ type: "success", text: "Blooio connector saved. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to save Blooio connector." });
+    }
+    setSaveBusy(false);
+  }, [blooioKeyInput, blooioPhoneInput, loadConnectors]);
+
+  const handleBlooioDelete = useCallback(async () => {
+    setDeleteBusy(true);
+    setFeedback(null);
+    try {
+      await client.deleteConnector("blooio");
+      setChannelsState((prev) => ({ ...prev, blooio: { configured: false, maskedToken: null } }));
+      setBlooioMaskedKey(null);
+      setBlooioKeyInput("");
+      setBlooioKeyDirty(false);
+      setBlooioPhoneInput("");
+      setDeleteModalOpen(false);
+      setFeedback({ type: "success", text: "Blooio connector deleted. Restart agent to apply changes." });
+      await loadConnectors();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to delete Blooio connector." });
+    }
+    setDeleteBusy(false);
+  }, [loadConnectors]);
+
   useEffect(() => {
     void loadConnectors();
   }, [loadConnectors]);
 
   /* ── RPC provider selection state ────────────────────────────────── */
-  const [selectedEvmRpc, setSelectedEvmRpc] = useState<"alchemy" | "infura" | "ankr">("alchemy");
-  const [selectedSolanaRpc, setSelectedSolanaRpc] = useState<"helius" | "birdeye">("helius");
+  const [selectedEvmRpc, setSelectedEvmRpc] = useState<"eliza-cloud" | "alchemy" | "infura" | "ankr">("eliza-cloud");
+  const [selectedSolanaRpc, setSelectedSolanaRpc] = useState<"eliza-cloud" | "helius-birdeye">("eliza-cloud");
 
   /* ── Export / Import modal state ─────────────────────────────────── */
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -586,6 +814,9 @@ export function ConfigView() {
 
   return (
     <div>
+      <h2 className="text-lg font-bold">Config</h2>
+      <p className="text-[13px] text-[var(--muted)] mb-5">Agent settings and configuration.</p>
+
       {/* ═══════════════════════════════════════════════════════════════
           1. THEME
           ═══════════════════════════════════════════════════════════════ */}
@@ -736,38 +967,61 @@ export function ConfigView() {
                       </div>
 
                       {/* Cloud model selection */}
-                      {modelOptions && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs font-semibold">Small Model</label>
-                            <div className="text-[10px] text-[var(--muted)]">Fast model for simple tasks</div>
-                            <select
-                              value={currentSmallModel}
-                              onChange={(e) => setCurrentSmallModel(e.target.value)}
-                              className="px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
-                            >
-                              <option value="">Select model...</option>
-                              {modelOptions.small.map((m) => (
-                                <option key={m.id} value={m.id}>{m.name}</option>
-                              ))}
-                            </select>
+                      {modelOptions && (() => {
+                        // Group models by provider for cleaner optgroup display
+                        const groupByProvider = (models: typeof modelOptions.small) => {
+                          const groups: Record<string, typeof models> = {};
+                          for (const m of models) {
+                            const key = m.provider || "Other";
+                            if (!groups[key]) groups[key] = [];
+                            groups[key].push(m);
+                          }
+                          return groups;
+                        };
+                        const smallGroups = groupByProvider(modelOptions.small);
+                        const largeGroups = groupByProvider(modelOptions.large);
+
+                        return (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold">Small Model</label>
+                              <div className="text-[10px] text-[var(--muted)]">Fast model for simple tasks</div>
+                              <select
+                                value={currentSmallModel}
+                                onChange={(e) => setCurrentSmallModel(e.target.value)}
+                                className="px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
+                              >
+                                <option value="">Select model...</option>
+                                {Object.entries(smallGroups).map(([provider, models]) => (
+                                  <optgroup key={provider} label={provider}>
+                                    {models.map((m) => (
+                                      <option key={m.id} value={m.id}>{m.name}</option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold">Large Model</label>
+                              <div className="text-[10px] text-[var(--muted)]">Powerful model for complex reasoning</div>
+                              <select
+                                value={currentLargeModel}
+                                onChange={(e) => setCurrentLargeModel(e.target.value)}
+                                className="px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
+                              >
+                                <option value="">Select model...</option>
+                                {Object.entries(largeGroups).map(([provider, models]) => (
+                                  <optgroup key={provider} label={provider}>
+                                    {models.map((m) => (
+                                      <option key={m.id} value={m.id}>{m.name}</option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs font-semibold">Large Model</label>
-                            <div className="text-[10px] text-[var(--muted)]">Powerful model for complex reasoning</div>
-                            <select
-                              value={currentLargeModel}
-                              onChange={(e) => setCurrentLargeModel(e.target.value)}
-                              className="px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] focus:border-[var(--accent)] focus:outline-none"
-                            >
-                              <option value="">Select model...</option>
-                              {modelOptions.large.map((m) => (
-                                <option key={m.id} value={m.id}>{m.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       <div className="flex justify-end mt-3">
                         <button
@@ -886,8 +1140,9 @@ export function ConfigView() {
             <div className="text-xs font-bold mb-1">EVM</div>
             <div className="text-[11px] text-[var(--muted)] mb-2">Ethereum, Base, Arbitrum, Optimism, Polygon</div>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {([
+                { id: "eliza-cloud" as const, label: "Eliza Cloud" },
                 { id: "alchemy" as const, label: "Alchemy" },
                 { id: "infura" as const, label: "Infura" },
                 { id: "ankr" as const, label: "Ankr" },
@@ -912,6 +1167,36 @@ export function ConfigView() {
             </div>
 
             {/* Inline settings for selected EVM provider */}
+            {selectedEvmRpc === "eliza-cloud" && (
+              <div className="mt-3">
+                {cloudConnected ? (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[var(--ok,#16a34a)]" />
+                    <span className="font-semibold">Connected to Eliza Cloud</span>
+                    {cloudCredits !== null && (
+                      <span className="text-[var(--muted)] ml-auto">
+                        Credits: <span className={cloudCreditsCritical ? "text-[var(--danger,#e74c3c)] font-bold" : cloudCreditsLow ? "text-[#b8860b] font-bold" : ""}>${cloudCredits.toFixed(2)}</span>
+                        {cloudTopUpUrl && <a href={cloudTopUpUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] ml-1.5 text-[var(--accent)]">Top up</a>}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[var(--muted)]" />
+                      <span className="text-[var(--muted)]">Requires Eliza Cloud connection</span>
+                    </div>
+                    <button
+                      className="btn text-xs py-[3px] px-3 !mt-0 font-bold"
+                      onClick={() => void handleCloudLogin()}
+                      disabled={cloudLoginBusy}
+                    >
+                      {cloudLoginBusy ? "Connecting..." : "Log in"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {selectedEvmRpc === "alchemy" && (
               <div className="mt-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-xs">
@@ -951,8 +1236,8 @@ export function ConfigView() {
 
             <div className="grid grid-cols-2 gap-1.5">
               {([
-                { id: "helius" as const, label: "Helius" },
-                { id: "birdeye" as const, label: "Birdeye" },
+                { id: "eliza-cloud" as const, label: "Eliza Cloud" },
+                { id: "helius-birdeye" as const, label: "Helius + Birdeye" },
               ]).map((p) => {
                 const active = selectedSolanaRpc === p.id;
                 return (
@@ -974,24 +1259,54 @@ export function ConfigView() {
             </div>
 
             {/* Inline settings for selected Solana provider */}
-            {selectedSolanaRpc === "helius" && (
-              <div className="mt-3 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="font-semibold">Helius API Key</span>
-                  {walletConfig?.heliusKeySet && <span className="text-[10px] text-[var(--ok,#16a34a)]">configured</span>}
-                  <a href="https://dev.helius.xyz/" target="_blank" rel="noopener" className="text-[10px] text-[var(--accent)] ml-auto">Get key</a>
-                </div>
-                <input type="password" data-wallet-config="HELIUS_API_KEY" placeholder={walletConfig?.heliusKeySet ? "Already set — leave blank to keep" : "Enter API key"} className="w-full py-1.5 px-2 border border-[var(--border)] bg-[var(--card)] text-xs font-[var(--mono)] box-border focus:border-[var(--accent)] focus:outline-none" />
+            {selectedSolanaRpc === "eliza-cloud" && (
+              <div className="mt-3">
+                {cloudConnected ? (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[var(--ok,#16a34a)]" />
+                    <span className="font-semibold">Connected to Eliza Cloud</span>
+                    {cloudCredits !== null && (
+                      <span className="text-[var(--muted)] ml-auto">
+                        Credits: <span className={cloudCreditsCritical ? "text-[var(--danger,#e74c3c)] font-bold" : cloudCreditsLow ? "text-[#b8860b] font-bold" : ""}>${cloudCredits.toFixed(2)}</span>
+                        {cloudTopUpUrl && <a href={cloudTopUpUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] ml-1.5 text-[var(--accent)]">Top up</a>}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[var(--muted)]" />
+                      <span className="text-[var(--muted)]">Requires Eliza Cloud connection</span>
+                    </div>
+                    <button
+                      className="btn text-xs py-[3px] px-3 !mt-0 font-bold"
+                      onClick={() => void handleCloudLogin()}
+                      disabled={cloudLoginBusy}
+                    >
+                      {cloudLoginBusy ? "Connecting..." : "Log in"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-            {selectedSolanaRpc === "birdeye" && (
-              <div className="mt-3 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="font-semibold">Birdeye API Key</span>
-                  {walletConfig?.birdeyeKeySet && <span className="text-[10px] text-[var(--ok,#16a34a)]">configured</span>}
-                  <a href="https://birdeye.so/" target="_blank" rel="noopener" className="text-[10px] text-[var(--accent)] ml-auto">Get key</a>
+            {selectedSolanaRpc === "helius-birdeye" && (
+              <div className="mt-3 flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="font-semibold">Helius API Key</span>
+                    {walletConfig?.heliusKeySet && <span className="text-[10px] text-[var(--ok,#16a34a)]">configured</span>}
+                    <a href="https://dev.helius.xyz/" target="_blank" rel="noopener" className="text-[10px] text-[var(--accent)] ml-auto">Get key</a>
+                  </div>
+                  <input type="password" data-wallet-config="HELIUS_API_KEY" placeholder={walletConfig?.heliusKeySet ? "Already set — leave blank to keep" : "Enter API key"} className="w-full py-1.5 px-2 border border-[var(--border)] bg-[var(--card)] text-xs font-[var(--mono)] box-border focus:border-[var(--accent)] focus:outline-none" />
                 </div>
-                <input type="password" data-wallet-config="BIRDEYE_API_KEY" placeholder={walletConfig?.birdeyeKeySet ? "Already set — leave blank to keep" : "Enter API key"} className="w-full py-1.5 px-2 border border-[var(--border)] bg-[var(--card)] text-xs font-[var(--mono)] box-border focus:border-[var(--accent)] focus:outline-none" />
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="font-semibold">Birdeye API Key</span>
+                    {walletConfig?.birdeyeKeySet && <span className="text-[10px] text-[var(--ok,#16a34a)]">configured</span>}
+                    <a href="https://birdeye.so/" target="_blank" rel="noopener" className="text-[10px] text-[var(--accent)] ml-auto">Get key</a>
+                  </div>
+                  <input type="password" data-wallet-config="BIRDEYE_API_KEY" placeholder={walletConfig?.birdeyeKeySet ? "Already set — leave blank to keep" : "Enter API key"} className="w-full py-1.5 px-2 border border-[var(--border)] bg-[var(--card)] text-xs font-[var(--mono)] box-border focus:border-[var(--accent)] focus:outline-none" />
+                </div>
               </div>
             )}
           </div>
@@ -1022,6 +1337,7 @@ export function ConfigView() {
         {channelsError && <div className="mb-3 text-xs text-[var(--danger,#e74c3c)]">{channelsError}</div>}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* ── Telegram ───────────────────────────────────── */}
           <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)]">
             <div className="flex items-center justify-between gap-2">
               <div className="font-bold text-sm">Telegram</div>
@@ -1036,25 +1352,17 @@ export function ConfigView() {
               </span>
             </div>
             <div className="text-[11px] text-[var(--muted)] mt-0.5">Connect via @BotFather bot token.</div>
-
             <div className="mt-3">
               <label className="font-semibold text-[11px]">Bot Token</label>
               <div className="flex mt-1">
                 <input
                   type={telegramTokenVisible ? "text" : "password"}
                   value={telegramTokenInput}
-                  onChange={(e) => {
-                    setTelegramTokenDirty(true);
-                    setTelegramTokenInput(e.target.value);
-                  }}
+                  onChange={(e) => { setTelegramTokenDirty(true); setTelegramTokenInput(e.target.value); }}
                   placeholder={telegramMaskedToken ?? "Bot token from @BotFather"}
                   className="flex-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
                 />
-                <button
-                  type="button"
-                  className="px-3 border border-l-0 border-[var(--border)] bg-[var(--bg-muted,transparent)] text-xs cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                  onClick={() => setTelegramTokenVisible((v) => !v)}
-                >
+                <button type="button" className="px-3 border border-l-0 border-[var(--border)] bg-[var(--bg-muted,transparent)] text-xs cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setTelegramTokenVisible((v) => !v)}>
                   {telegramTokenVisible ? "Hide" : "Show"}
                 </button>
               </div>
@@ -1062,37 +1370,212 @@ export function ConfigView() {
                 <div className="text-[10px] text-[var(--muted)] mt-1">Current: {telegramMaskedToken}</div>
               )}
             </div>
-
             <div className="flex items-center gap-2 mt-3">
-              <button
-                className="btn text-xs py-[5px] px-3 !mt-0"
-                disabled={saveBusy || channelsLoading}
-                onClick={() => void handleTelegramSave()}
-              >
+              <button className="btn text-xs py-[5px] px-3 !mt-0" disabled={saveBusy || channelsLoading} onClick={() => void handleTelegramSave()}>
                 {saveBusy ? "Saving..." : "Save"}
               </button>
-              <button
-                className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]"
-                disabled={deleteBusy || !channelsState.telegram?.configured}
-                onClick={() => setDeleteModalOpen(true)}
-              >
+              <button className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]" disabled={deleteBusy || !channelsState.telegram?.configured} onClick={() => { setDeleteModalConnector("telegram"); setDeleteModalOpen(true); }}>
                 Delete
               </button>
             </div>
           </div>
 
-          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)] opacity-50">
-            <div className="font-bold text-sm flex items-center gap-2">
-              Discord <span className="text-[10px] border border-[var(--border)] px-2 py-0.5">Coming Soon</span>
+          {/* ── Discord ────────────────────────────────────── */}
+          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-sm">Discord</div>
+              <span
+                className={`text-[10px] px-2 py-0.5 border ${
+                  channelsState.discord?.configured
+                    ? "border-[var(--ok,#16a34a)] text-[var(--ok,#16a34a)]"
+                    : "border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {channelsState.discord?.configured ? "Connected" : "Not configured"}
+              </span>
             </div>
-            <div className="text-[11px] text-[var(--muted)] mt-0.5">Discord bot integration (plugin in development)</div>
+            <div className="text-[11px] text-[var(--muted)] mt-0.5">Connect via Discord bot token.</div>
+            <div className="mt-3">
+              <label className="font-semibold text-[11px]">Bot Token</label>
+              <div className="flex mt-1">
+                <input
+                  type={discordTokenVisible ? "text" : "password"}
+                  value={discordTokenInput}
+                  onChange={(e) => { setDiscordTokenDirty(true); setDiscordTokenInput(e.target.value); }}
+                  placeholder={discordMaskedToken ?? "Bot token from Developer Portal"}
+                  className="flex-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                />
+                <button type="button" className="px-3 border border-l-0 border-[var(--border)] bg-[var(--bg-muted,transparent)] text-xs cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setDiscordTokenVisible((v) => !v)}>
+                  {discordTokenVisible ? "Hide" : "Show"}
+                </button>
+              </div>
+              {channelsState.discord?.configured && !discordTokenDirty && discordMaskedToken && (
+                <div className="text-[10px] text-[var(--muted)] mt-1">Current: {discordMaskedToken}</div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button className="btn text-xs py-[5px] px-3 !mt-0" disabled={saveBusy || channelsLoading} onClick={() => void handleDiscordSave()}>
+                {saveBusy ? "Saving..." : "Save"}
+              </button>
+              <button className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]" disabled={deleteBusy || !channelsState.discord?.configured} onClick={() => { setDeleteModalConnector("discord"); setDeleteModalOpen(true); }}>
+                Delete
+              </button>
+            </div>
           </div>
 
-          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)] opacity-50">
-            <div className="font-bold text-sm flex items-center gap-2">
-              WhatsApp <span className="text-[10px] border border-[var(--border)] px-2 py-0.5">Coming Soon</span>
+          {/* ── WhatsApp ───────────────────────────────────── */}
+          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-sm">WhatsApp</div>
+              <span
+                className={`text-[10px] px-2 py-0.5 border ${
+                  channelsState.whatsapp?.configured
+                    ? "border-[var(--ok,#16a34a)] text-[var(--ok,#16a34a)]"
+                    : "border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {channelsState.whatsapp?.configured ? "Connected" : "Not configured"}
+              </span>
             </div>
-            <div className="text-[11px] text-[var(--muted)] mt-0.5">WhatsApp via Baileys (plugin in development)</div>
+            <div className="text-[11px] text-[var(--muted)] mt-0.5">Connect via Baileys — QR pairing on first launch.</div>
+            <div className="mt-3">
+              <label className="font-semibold text-[11px]">Session Path</label>
+              <input
+                type="text"
+                value={whatsappSessionInput}
+                onChange={(e) => setWhatsappSessionInput(e.target.value)}
+                placeholder="~/.milaidy/whatsapp-session"
+                className="w-full mt-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button className="btn text-xs py-[5px] px-3 !mt-0" disabled={saveBusy || channelsLoading} onClick={() => void handleWhatsappSave()}>
+                {saveBusy ? "Saving..." : "Save"}
+              </button>
+              <button className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]" disabled={deleteBusy || !channelsState.whatsapp?.configured} onClick={() => { setDeleteModalConnector("whatsapp"); setDeleteModalOpen(true); }}>
+                Delete
+              </button>
+            </div>
+          </div>
+
+          {/* ── Twilio SMS ─────────────────────────────────── */}
+          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-sm">Twilio SMS</div>
+              <span
+                className={`text-[10px] px-2 py-0.5 border ${
+                  channelsState.twilio?.configured
+                    ? "border-[var(--ok,#16a34a)] text-[var(--ok,#16a34a)]"
+                    : "border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {channelsState.twilio?.configured ? "Connected" : "Not configured"}
+              </span>
+            </div>
+            <div className="text-[11px] text-[var(--muted)] mt-0.5">Green-text SMS messaging via Twilio.</div>
+            <div className="mt-3 flex flex-col gap-2">
+              <div>
+                <label className="font-semibold text-[11px]">Account SID</label>
+                <div className="flex mt-1">
+                  <input
+                    type={twilioSidVisible ? "text" : "password"}
+                    value={twilioSidInput}
+                    onChange={(e) => { setTwilioSidDirty(true); setTwilioSidInput(e.target.value); }}
+                    placeholder={twilioMaskedSid ?? "Twilio Account SID"}
+                    className="flex-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                  />
+                  <button type="button" className="px-3 border border-l-0 border-[var(--border)] bg-[var(--bg-muted,transparent)] text-xs cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setTwilioSidVisible((v) => !v)}>
+                    {twilioSidVisible ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {channelsState.twilio?.configured && !twilioSidDirty && twilioMaskedSid && (
+                  <div className="text-[10px] text-[var(--muted)] mt-1">Current: {twilioMaskedSid}</div>
+                )}
+              </div>
+              <div>
+                <label className="font-semibold text-[11px]">Auth Token</label>
+                <input
+                  type="password"
+                  value={twilioAuthInput}
+                  onChange={(e) => setTwilioAuthInput(e.target.value)}
+                  placeholder="Twilio Auth Token"
+                  className="w-full mt-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-[11px]">Phone Number</label>
+                <input
+                  type="tel"
+                  value={twilioPhoneInput}
+                  onChange={(e) => setTwilioPhoneInput(e.target.value)}
+                  placeholder="+1234567890"
+                  className="w-full mt-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button className="btn text-xs py-[5px] px-3 !mt-0" disabled={saveBusy || channelsLoading} onClick={() => void handleTwilioSave()}>
+                {saveBusy ? "Saving..." : "Save"}
+              </button>
+              <button className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]" disabled={deleteBusy || !channelsState.twilio?.configured} onClick={() => { setDeleteModalConnector("twilio"); setDeleteModalOpen(true); }}>
+                Delete
+              </button>
+            </div>
+          </div>
+
+          {/* ── Blooio iMessage ────────────────────────────── */}
+          <div className="px-3.5 py-3 border border-[var(--border)] bg-[var(--card)]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-sm">Blooio iMessage</div>
+              <span
+                className={`text-[10px] px-2 py-0.5 border ${
+                  channelsState.blooio?.configured
+                    ? "border-[var(--ok,#16a34a)] text-[var(--ok,#16a34a)]"
+                    : "border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {channelsState.blooio?.configured ? "Connected" : "Not configured"}
+              </span>
+            </div>
+            <div className="text-[11px] text-[var(--muted)] mt-0.5">Blue-text iMessage integration via Blooio.</div>
+            <div className="mt-3 flex flex-col gap-2">
+              <div>
+                <label className="font-semibold text-[11px]">API Key</label>
+                <div className="flex mt-1">
+                  <input
+                    type={blooioKeyVisible ? "text" : "password"}
+                    value={blooioKeyInput}
+                    onChange={(e) => { setBlooioKeyDirty(true); setBlooioKeyInput(e.target.value); }}
+                    placeholder={blooioMaskedKey ?? "Blooio API key"}
+                    className="flex-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                  />
+                  <button type="button" className="px-3 border border-l-0 border-[var(--border)] bg-[var(--bg-muted,transparent)] text-xs cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setBlooioKeyVisible((v) => !v)}>
+                    {blooioKeyVisible ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {channelsState.blooio?.configured && !blooioKeyDirty && blooioMaskedKey && (
+                  <div className="text-[10px] text-[var(--muted)] mt-1">Current: {blooioMaskedKey}</div>
+                )}
+              </div>
+              <div>
+                <label className="font-semibold text-[11px]">Phone Number</label>
+                <input
+                  type="tel"
+                  value={blooioPhoneInput}
+                  onChange={(e) => setBlooioPhoneInput(e.target.value)}
+                  placeholder="+1234567890"
+                  className="w-full mt-1 px-2.5 py-[7px] border border-[var(--border)] bg-[var(--card)] text-[13px] font-[var(--mono)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button className="btn text-xs py-[5px] px-3 !mt-0" disabled={saveBusy || channelsLoading} onClick={() => void handleBlooioSave()}>
+                {saveBusy ? "Saving..." : "Save"}
+              </button>
+              <button className="btn text-xs py-[5px] px-3 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--danger,#e74c3c)]" disabled={deleteBusy || !channelsState.blooio?.configured} onClick={() => { setDeleteModalConnector("blooio"); setDeleteModalOpen(true); }}>
+                Delete
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1305,15 +1788,15 @@ export function ConfigView() {
         </div>
       </div>
 
-      <Modal open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Delete Telegram Channel">
+      <Modal open={deleteModalOpen} onClose={() => { setDeleteModalOpen(false); setDeleteModalConnector(null); }} title={`Delete ${deleteModalConnector ? deleteModalConnector.charAt(0).toUpperCase() + deleteModalConnector.slice(1) : ""} Connector`}>
         <div className="flex flex-col gap-3">
           <div className="text-xs text-[var(--muted)]">
-            Remove the Telegram channel configuration? This will disconnect Telegram after restart.
+            Remove the {deleteModalConnector} connector configuration? This will disconnect {deleteModalConnector} after restart.
           </div>
           <div className="flex justify-end gap-2">
             <button
               className="btn text-xs py-1.5 px-4 !mt-0 !bg-transparent !border-[var(--border)] !text-[var(--txt)]"
-              onClick={() => setDeleteModalOpen(false)}
+              onClick={() => { setDeleteModalOpen(false); setDeleteModalConnector(null); }}
               disabled={deleteBusy}
             >
               Cancel
@@ -1321,7 +1804,13 @@ export function ConfigView() {
             <button
               className="btn text-xs py-1.5 px-4 !mt-0"
               style={{ background: "var(--danger, #e74c3c)", borderColor: "var(--danger, #e74c3c)" }}
-              onClick={() => void handleTelegramDelete()}
+              onClick={() => {
+                if (deleteModalConnector === "telegram") void handleTelegramDelete();
+                else if (deleteModalConnector === "discord") void handleDiscordDelete();
+                else if (deleteModalConnector === "whatsapp") void handleWhatsappDelete();
+                else if (deleteModalConnector === "twilio") void handleTwilioDelete();
+                else if (deleteModalConnector === "blooio") void handleBlooioDelete();
+              }}
               disabled={deleteBusy}
             >
               {deleteBusy ? "Deleting..." : "Delete"}

@@ -179,3 +179,16 @@
   color: var(--accent);
   background: var(--accent-subtle);
 }
+
+/* ── Loading screen dither effect ─────────────────────────────────── */
+
+@keyframes dither-fade {
+  0%, 100% { opacity: 0.02; }
+  45%, 55% { opacity: 1; }
+}
+
+.dither-char {
+  opacity: 0.02;
+  animation: dither-fade infinite;
+  animation-timing-function: steps(4);
+}

@@ -54,15 +54,13 @@ export type ThemeName =
   | "web2000"
   | "programmer"
   | "haxor"
-  | "psycho"
-  | "dark";
+  | "psycho";
 
 export const THEMES: ReadonlyArray<{
   id: ThemeName;
   label: string;
   hint: string;
 }> = [
-  { id: "dark", label: "dark", hint: "modern dark mode" },
   { id: "milady", label: "milady", hint: "clean black & white" },
   { id: "qt314", label: "qt3.14", hint: "soft pastels" },
   { id: "web2000", label: "web2000", hint: "green hacker vibes" },
@@ -80,7 +78,7 @@ function loadTheme(): ThemeName {
   } catch {
     /* ignore */
   }
-  return "dark";
+  return "milady";
 }
 
 function applyTheme(name: ThemeName) {
@@ -290,6 +288,13 @@ export interface AppState {
   onboardingApiKey: string;
   onboardingOpenRouterModel: string;
   onboardingTelegramToken: string;
+  onboardingDiscordToken: string;
+  onboardingWhatsAppSessionPath: string;
+  onboardingTwilioAccountSid: string;
+  onboardingTwilioAuthToken: string;
+  onboardingTwilioPhoneNumber: string;
+  onboardingBlooioApiKey: string;
+  onboardingBlooioPhoneNumber: string;
   onboardingSelectedChains: Set<string>;
   onboardingRpcSelections: Record<string, string>;
   onboardingRpcKeys: Record<string, string>;
@@ -592,7 +597,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions | null>(null);
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingStyle, setOnboardingStyle] = useState("");
-  const [onboardingTheme, setOnboardingTheme] = useState<ThemeName>("dark");
+  const [onboardingTheme, setOnboardingTheme] = useState<ThemeName>("milady");
   const [onboardingRunMode, setOnboardingRunMode] = useState<"local" | "cloud" | "">("");
   const [onboardingCloudProvider, setOnboardingCloudProvider] = useState("");
   const [onboardingSmallModel, setOnboardingSmallModel] = useState("claude-haiku");
@@ -601,6 +606,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [onboardingApiKey, setOnboardingApiKey] = useState("");
   const [onboardingOpenRouterModel, setOnboardingOpenRouterModel] = useState("anthropic/claude-sonnet-4");
   const [onboardingTelegramToken, setOnboardingTelegramToken] = useState("");
+  const [onboardingDiscordToken, setOnboardingDiscordToken] = useState("");
+  const [onboardingWhatsAppSessionPath, setOnboardingWhatsAppSessionPath] = useState("");
+  const [onboardingTwilioAccountSid, setOnboardingTwilioAccountSid] = useState("");
+  const [onboardingTwilioAuthToken, setOnboardingTwilioAuthToken] = useState("");
+  const [onboardingTwilioPhoneNumber, setOnboardingTwilioPhoneNumber] = useState("");
+  const [onboardingBlooioApiKey, setOnboardingBlooioApiKey] = useState("");
+  const [onboardingBlooioPhoneNumber, setOnboardingBlooioPhoneNumber] = useState("");
   const [onboardingSelectedChains, setOnboardingSelectedChains] = useState<Set<string>>(new Set(["evm", "solana"]));
   const [onboardingRpcSelections, setOnboardingRpcSelections] = useState<Record<string, string>>({});
   const [onboardingRpcKeys, setOnboardingRpcKeys] = useState<Record<string, string>>({});
@@ -1651,9 +1663,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         providerApiKey: onboardingRunMode === "local" ? onboardingApiKey || undefined : undefined,
         openrouterModel: onboardingRunMode === "local" && onboardingProvider === "openrouter" ? onboardingOpenRouterModel || undefined : undefined,
         inventoryProviders: inventoryProviders.length > 0 ? inventoryProviders : undefined,
-        connectors: onboardingTelegramToken.trim()
-          ? { telegram: { botToken: onboardingTelegramToken.trim() } }
-          : undefined,
+        connectors: (() => {
+          const c: Record<string, Record<string, string>> = {};
+          if (onboardingTelegramToken.trim()) {
+            c.telegram = { botToken: onboardingTelegramToken.trim() };
+          }
+          if (onboardingDiscordToken.trim()) {
+            c.discord = { token: onboardingDiscordToken.trim() };
+          }
+          if (onboardingWhatsAppSessionPath.trim()) {
+            c.whatsapp = { sessionPath: onboardingWhatsAppSessionPath.trim() };
+          }
+          if (onboardingTwilioAccountSid.trim() && onboardingTwilioAuthToken.trim()) {
+            c.twilio = {
+              accountSid: onboardingTwilioAccountSid.trim(),
+              authToken: onboardingTwilioAuthToken.trim(),
+              ...(onboardingTwilioPhoneNumber.trim() ? { phoneNumber: onboardingTwilioPhoneNumber.trim() } : {}),
+            };
+          }
+          if (onboardingBlooioApiKey.trim()) {
+            c.blooio = {
+              apiKey: onboardingBlooioApiKey.trim(),
+              ...(onboardingBlooioPhoneNumber.trim() ? { phoneNumber: onboardingBlooioPhoneNumber.trim() } : {}),
+            };
+          }
+          return Object.keys(c).length > 0 ? c : undefined;
+        })(),
       });
     } catch (err) {
       window.alert(`Setup failed: ${err instanceof Error ? err.message : "network error"}. Please try again.`);
@@ -1671,6 +1706,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel,
     onboardingLargeModel, onboardingProvider, onboardingApiKey,
     onboardingOpenRouterModel, onboardingTelegramToken,
+    onboardingDiscordToken, onboardingWhatsAppSessionPath,
+    onboardingTwilioAccountSid, onboardingTwilioAuthToken, onboardingTwilioPhoneNumber,
+    onboardingBlooioApiKey, onboardingBlooioPhoneNumber,
     onboardingSelectedChains, onboardingRpcSelections, onboardingRpcKeys,
   ]);
 
@@ -1697,9 +1735,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const poll = await client.cloudLoginPoll(resp.sessionId);
           if (poll.status === "authenticated") {
             if (cloudLoginPollTimer.current) clearInterval(cloudLoginPollTimer.current);
+            setCloudConnected(true);
             setCloudLoginBusy(false);
             setActionNotice("Logged in to Eliza Cloud successfully.", "success", 6000);
-            void pollCloudCredits();
+            // Delay credit fetch to give backend time to reflect the new
+            // auth state (config is saved but CLOUD_AUTH service may lag).
+            setTimeout(() => void pollCloudCredits(), 2000);
           } else if (poll.status === "expired" || poll.status === "error") {
             if (cloudLoginPollTimer.current) clearInterval(cloudLoginPollTimer.current);
             setCloudLoginError(poll.error ?? "Session expired. Please try again.");
@@ -1855,6 +1896,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       onboardingApiKey: setOnboardingApiKey as (v: never) => void,
       onboardingOpenRouterModel: setOnboardingOpenRouterModel as (v: never) => void,
       onboardingTelegramToken: setOnboardingTelegramToken as (v: never) => void,
+      onboardingDiscordToken: setOnboardingDiscordToken as (v: never) => void,
+      onboardingWhatsAppSessionPath: setOnboardingWhatsAppSessionPath as (v: never) => void,
+      onboardingTwilioAccountSid: setOnboardingTwilioAccountSid as (v: never) => void,
+      onboardingTwilioAuthToken: setOnboardingTwilioAuthToken as (v: never) => void,
+      onboardingTwilioPhoneNumber: setOnboardingTwilioPhoneNumber as (v: never) => void,
+      onboardingBlooioApiKey: setOnboardingBlooioApiKey as (v: never) => void,
+      onboardingBlooioPhoneNumber: setOnboardingBlooioPhoneNumber as (v: never) => void,
       onboardingSelectedChains: setOnboardingSelectedChains as (v: never) => void,
       onboardingRpcSelections: setOnboardingRpcSelections as (v: never) => void,
       onboardingRpcKeys: setOnboardingRpcKeys as (v: never) => void,
@@ -2010,11 +2058,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (urlTab === "plugins") void loadPlugins();
         if (urlTab === "skills") void loadSkills();
         if (urlTab === "character") void loadCharacter();
-        if (urlTab === "admin") {
+        if (urlTab === "config") {
           void checkExtensionStatus();
           void loadWalletConfig();
           void loadUpdateStatus();
           void loadPlugins();
+        }
+        if (urlTab === "admin") {
           void loadLogs();
         }
         if (urlTab === "inventory") void loadInventory();
@@ -2086,6 +2136,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onboardingRunMode, onboardingCloudProvider, onboardingSmallModel, onboardingLargeModel,
     onboardingProvider, onboardingApiKey, onboardingOpenRouterModel,
     onboardingTelegramToken,
+    onboardingDiscordToken, onboardingWhatsAppSessionPath,
+    onboardingTwilioAccountSid, onboardingTwilioAuthToken, onboardingTwilioPhoneNumber,
+    onboardingBlooioApiKey, onboardingBlooioPhoneNumber,
     onboardingSelectedChains, onboardingRpcSelections, onboardingRpcKeys, onboardingAvatar, onboardingRestarting,
     commandPaletteOpen, commandQuery, commandActiveIndex,
     mcpConfiguredServers, mcpServerStatuses, mcpMarketplaceQuery, mcpMarketplaceResults,

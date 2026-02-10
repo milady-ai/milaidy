@@ -521,6 +521,28 @@ export interface McpServerStatus {
   error?: string;
 }
 
+// Voice / TTS config
+export type VoiceProvider = "elevenlabs" | "simple-voice" | "edge";
+
+export interface VoiceConfig {
+  provider?: VoiceProvider;
+  elevenlabs?: {
+    apiKey?: string;
+    voiceId?: string;
+    modelId?: string;
+    stability?: number;
+    similarityBoost?: number;
+    speed?: number;
+  };
+  edge?: {
+    voice?: string;
+    lang?: string;
+    rate?: string;
+    pitch?: string;
+    volume?: string;
+  };
+}
+
 // Character
 export interface CharacterData {
   name?: string;

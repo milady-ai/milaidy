@@ -3,7 +3,7 @@ import { TAB_GROUPS, titleForTab, type Tab } from "../navigation";
 
 export function Nav() {
   const { tab, setTab } = useApp();
-  const validTabs: Tab[] = ["chat", "apps", "inventory", "plugins", "skills", "character", "admin"];
+  const validTabs: Tab[] = ["chat", "apps", "inventory", "plugins", "skills", "character", "config", "admin"];
 
   return (
     <nav className="border-b border-border py-2 px-5 flex gap-1 overflow-x-auto">

@@ -91,7 +91,7 @@
   "dependencies": {
     "@capacitor/core": "^8.0.2",
     "@clack/prompts": "^1.0.0",
-    "@elizaos/core": "2.0.0-alpha.3",
+    "@elizaos/core": "next",
     "@elizaos/plugin-acp": "next",
     "@elizaos/plugin-agent-orchestrator": "next",
     "@elizaos/plugin-agent-skills": "next",
@@ -110,17 +110,17 @@
     "@elizaos/plugin-experience": "next",
     "@elizaos/plugin-form": "next",
     "@elizaos/plugin-goals": "next",
-    "@elizaos/plugin-google-genai": "2.0.0-alpha.4",
+    "@elizaos/plugin-google-genai": "next",
     "@elizaos/plugin-groq": "next",
     "@elizaos/plugin-imessage": "next",
-    "@elizaos/plugin-knowledge": "2.0.0-alpha.4",
+    "@elizaos/plugin-knowledge": "next",
     "@elizaos/plugin-local-embedding": "next",
     "@elizaos/plugin-mattermost": "next",
     "@elizaos/plugin-mcp": "next",
     "@elizaos/plugin-msteams": "next",
-    "@elizaos/plugin-ollama": "2.0.0-alpha.4",
-    "@elizaos/plugin-openai": "2.0.0-alpha.3",
-    "@elizaos/plugin-openrouter": "2.0.0-alpha.3",
+    "@elizaos/plugin-ollama": "next",
+    "@elizaos/plugin-openai": "next",
+    "@elizaos/plugin-openrouter": "next",
     "@elizaos/plugin-pdf": "next",
     "@elizaos/plugin-personality": "next",
     "@elizaos/plugin-plugin-manager": "next",
@@ -138,7 +138,7 @@
     "@elizaos/plugin-vision": "next",
     "@elizaos/plugin-whatsapp": "next",
     "@elizaos/plugin-xai": "next",
-    "@elizaos/skills": "^2.0.0-alpha.3",
+    "@elizaos/skills": "next",
     "@elizaos/tui": "next",
     "@homunculuslabs/plugin-zai": "2.0.0-alpha.1",
     "@mariozechner/pi-ai": "^0.52.9",
@@ -149,6 +149,7 @@
     "dotenv": "^17.2.3",
     "json5": "^2.2.3",
     "tailwindcss": "^4.1.18",
+    "telegraf": "^4.16.3",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
@@ -176,8 +177,13 @@
     "tough-cookie": "4.1.3",
     "drizzle-orm": "0.45.1",
     "@elizaos/computeruse": "next",
-    "@elizaos/core": "$@elizaos/core",
+    "@elizaos/core": "next",
     "@elizaos/plugin-sql": "$@elizaos/plugin-sql"
+  },
+  "pnpm": {
+    "overrides": {
+      "@elizaos/core": "2.0.0-alpha.10"
+    }
   },
   "engines": {
     "node": ">=22.12.0"

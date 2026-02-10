@@ -1,32 +1,29 @@
 /**
- * Admin view — advanced settings, logs, and database management.
+ * Admin view — logs and database management.
  *
- * Contains three sub-tabs:
- *   - Config: theme, model provider, RPC, connectors, updates, extension, export/import, danger zone
+ * Contains two sub-tabs:
  *   - Logs: agent runtime logs
  *   - Database: database explorer
  */
 
 import { useState } from "react";
-import { ConfigView } from "./ConfigView";
 import { LogsView } from "./LogsView";
 import { DatabaseView } from "./DatabaseView";
 
-type AdminTab = "config" | "logs" | "database";
+type AdminTab = "logs" | "database";
 
 const ADMIN_TABS: { id: AdminTab; label: string }[] = [
-  { id: "config", label: "Config" },
   { id: "logs", label: "Logs" },
   { id: "database", label: "Database" },
 ];
 
 export function AdminView() {
-  const [activeTab, setActiveTab] = useState<AdminTab>("config");
+  const [activeTab, setActiveTab] = useState<AdminTab>("logs");
 
   return (
     <div>
       <h2 className="text-lg font-bold">Admin</h2>
-      <p className="text-[13px] text-[var(--muted)] mb-4">Advanced settings, logs, and database.</p>
+      <p className="text-[13px] text-[var(--muted)] mb-4">Logs and database.</p>
 
       {/* Sub-tab bar */}
       <div className="flex gap-1 border-b border-[var(--border)] mb-5">
@@ -46,7 +43,6 @@ export function AdminView() {
       </div>
 
       {/* Sub-tab content */}
-      {activeTab === "config" && <ConfigView />}
       {activeTab === "logs" && <LogsView />}
       {activeTab === "database" && <DatabaseView />}
     </div>

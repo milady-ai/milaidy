@@ -1564,52 +1564,43 @@ function getModelOptions(): {
     description: string;
   }>;
 } {
+  // All models available via Eliza Cloud (Vercel AI Gateway).
+  // Matches the curated ALLOWED_CHAT_MODELS + supplementary gateway models.
   return {
     small: [
-      {
-        id: "claude-haiku",
-        name: "Claude Haiku (latest)",
-        provider: "anthropic",
-        description: "Fast and efficient. Default small model.",
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "GPT-4o Mini",
-        provider: "openai",
-        description: "OpenAI's compact model.",
-      },
-      {
-        id: "gemini-flash",
-        name: "Gemini Flash",
-        provider: "google",
-        description: "Google's fast model.",
-      },
+      // OpenAI
+      { id: "openai/gpt-5-mini", name: "GPT-5 Mini", provider: "OpenAI", description: "Fast and affordable." },
+      { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI", description: "Compact multimodal model." },
+      // Anthropic
+      { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic", description: "Balanced speed and capability." },
+      // Google
+      { id: "google/gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", provider: "Google", description: "Fastest option." },
+      { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google", description: "Fast and smart." },
+      { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google", description: "Multimodal flash model." },
+      { id: "google/gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: "Google", description: "Lightweight multimodal." },
+      // Moonshot AI
+      { id: "moonshotai/kimi-k2-turbo", name: "Kimi K2 Turbo", provider: "Moonshot AI", description: "Extra speed." },
+      // DeepSeek
+      { id: "deepseek/deepseek-v3.2-exp", name: "DeepSeek V3.2", provider: "DeepSeek", description: "Open and powerful." },
     ],
     large: [
-      {
-        id: "claude-sonnet-4-5",
-        name: "Claude Sonnet 4.5",
-        provider: "anthropic",
-        description: "Powerful reasoning. Default large model.",
-      },
-      {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        provider: "openai",
-        description: "OpenAI's flagship model.",
-      },
-      {
-        id: "claude-opus-4-6",
-        name: "Claude Opus 4.6",
-        provider: "anthropic",
-        description: "Most capable Claude model. Deep reasoning.",
-      },
-      {
-        id: "gemini-pro",
-        name: "Gemini Pro",
-        provider: "google",
-        description: "Google's advanced model.",
-      },
+      // Anthropic
+      { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5", provider: "Anthropic", description: "Newest Claude. Excellent reasoning." },
+      { id: "anthropic/claude-opus-4.5", name: "Claude Opus 4.5", provider: "Anthropic", description: "Most capable Claude model." },
+      { id: "anthropic/claude-opus-4.1", name: "Claude Opus 4.1", provider: "Anthropic", description: "Deep reasoning powerhouse." },
+      { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic", description: "Balanced performance." },
+      { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "Anthropic", description: "Proven multimodal model." },
+      // OpenAI
+      { id: "openai/gpt-5", name: "GPT-5", provider: "OpenAI", description: "Most capable OpenAI model." },
+      { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI", description: "Flagship multimodal model." },
+      { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI", description: "Fast multimodal." },
+      // Google
+      { id: "google/gemini-3-pro-preview", name: "Gemini 3 Pro Preview", provider: "Google", description: "Advanced reasoning." },
+      { id: "google/gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "Google", description: "Versatile multimodal." },
+      // Moonshot AI
+      { id: "moonshotai/kimi-k2-0905", name: "Kimi K2", provider: "Moonshot AI", description: "Fast and capable." },
+      // DeepSeek
+      { id: "deepseek/deepseek-r1", name: "DeepSeek R1", provider: "DeepSeek", description: "Reasoning model." },
     ],
   };
 }
@@ -5371,22 +5362,36 @@ async function handleRequest(
       getUserId: () => string | undefined;
       getOrganizationId: () => string | undefined;
     } | null;
-    if (!cloudAuth || !cloudAuth.isAuthenticated()) {
+    if (cloudAuth?.isAuthenticated()) {
       json(res, {
-        connected: false,
+        connected: true,
         enabled: cloudEnabled,
         hasApiKey,
-        reason: "not_authenticated",
+        userId: cloudAuth.getUserId(),
+        organizationId: cloudAuth.getOrganizationId(),
+        topUpUrl: "https://www.elizacloud.ai/dashboard/billing",
+      });
+      return;
+    }
+    // Fallback: the CLOUD_AUTH service may not have been refreshed after a
+    // browser-based login flow that saved the API key to config.  If the
+    // config has cloud enabled + a valid API key, treat as connected so the
+    // UI reflects the login immediately (the service will catch up on next
+    // restart or re-init).
+    if (cloudEnabled && hasApiKey) {
+      json(res, {
+        connected: true,
+        enabled: cloudEnabled,
+        hasApiKey,
+        topUpUrl: "https://www.elizacloud.ai/dashboard/billing",
       });
       return;
     }
     json(res, {
-      connected: true,
+      connected: false,
       enabled: cloudEnabled,
       hasApiKey,
-      userId: cloudAuth.getUserId(),
-      organizationId: cloudAuth.getOrganizationId(),
-      topUpUrl: "https://www.elizacloud.ai/dashboard/billing",
+      reason: "not_authenticated",
     });
     return;
   }

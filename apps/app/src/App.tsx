@@ -15,8 +15,10 @@ import { PluginsView } from "./components/PluginsView.js";
 import { SkillsView } from "./components/SkillsView.js";
 import { InventoryView } from "./components/InventoryView.js";
 import { CharacterView } from "./components/CharacterView.js";
+import { ConfigView } from "./components/ConfigView.js";
 import { AdminView } from "./components/AdminView.js";
 import { AppsView } from "./components/AppsView.js";
+import { LoadingScreen } from "./components/LoadingScreen.js";
 
 function ViewRouter() {
   const { tab } = useApp();
@@ -27,6 +29,7 @@ function ViewRouter() {
     case "plugins": return <PluginsView />;
     case "skills": return <SkillsView />;
     case "character": return <CharacterView />;
+    case "config": return <ConfigView />;
     case "admin": return <AdminView />;
     default: return <ChatView />;
   }
@@ -36,11 +39,7 @@ export function App() {
   const { onboardingLoading, authRequired, onboardingComplete, tab, actionNotice } = useApp();
 
   if (onboardingLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-bg font-body text-txt">
-        <div className="text-muted italic">Loading...</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (authRequired) return <PairingView />;

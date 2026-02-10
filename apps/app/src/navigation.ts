@@ -2,13 +2,13 @@
  * Navigation — tabs + onboarding.
  */
 
-export type Tab = "chat" | "apps" | "inventory" | "plugins" | "skills" | "character" | "admin";
+export type Tab = "chat" | "apps" | "inventory" | "plugins" | "skills" | "character" | "config" | "admin";
 
 export const TAB_GROUPS = [
   { label: "Chat", tabs: ["chat"] as Tab[] },
   { label: "Play", tabs: ["apps"] as Tab[] },
   { label: "Manage", tabs: ["inventory", "plugins", "skills"] as Tab[] },
-  { label: "Settings", tabs: ["character", "admin"] as Tab[] },
+  { label: "Settings", tabs: ["character", "config", "admin"] as Tab[] },
 ] as const;
 
 const TAB_PATHS: Record<Tab, string> = {
@@ -18,12 +18,12 @@ const TAB_PATHS: Record<Tab, string> = {
   plugins: "/plugins",
   skills: "/skills",
   character: "/character",
+  config: "/config",
   admin: "/admin",
 };
 
 /** Legacy path redirects — old paths that now map to new tabs. */
 const LEGACY_PATHS: Record<string, Tab> = {
-  "/config": "character",
   "/database": "admin",
   "/logs": "admin",
   "/game": "apps",
@@ -78,6 +78,7 @@ export function titleForTab(tab: Tab): string {
     case "plugins": return "Plugins";
     case "skills": return "Skills";
     case "character": return "Character";
+    case "config": return "Config";
     case "admin": return "Admin";
     default: return "Milaidy";
   }

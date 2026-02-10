@@ -231,7 +231,7 @@ async function renderVRM(index, modules) {
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
     VRMUtils.combineSkeletons(vrm.scene);
 
-    // Center and frame the character — full body + face visible
+    // Center and frame the character — upper body portrait (face + torso)
     const box = new THREE.Box3().setFromObject(vrm.scene);
     const center = box.getCenter(new THREE.Vector3());
     vrm.scene.position.sub(center);
@@ -239,14 +239,27 @@ async function renderVRM(index, modules) {
     const box2 = new THREE.Box3().setFromObject(vrm.scene);
     const size = box2.getSize(new THREE.Vector3());
     const height = Math.max(0.001, size.y);
-    const maxDim = Math.max(size.x, height, size.z);
+    const width = Math.max(0.001, size.x);
+    const depth = Math.max(0.001, size.z);
 
-    // Frame: look at center of model, slightly above center
-    const lookY = height * 0.15;
+    // Normalize all models to standard height so they appear the same size
+    const STANDARD_HEIGHT = 1.0;
+    const scaleFactor = STANDARD_HEIGHT / height;
+    vrm.scene.scale.multiplyScalar(scaleFactor);
+    vrm.scene.updateMatrixWorld(true);
+    const box3 = new THREE.Box3().setFromObject(vrm.scene);
+    const center3 = box3.getCenter(new THREE.Vector3());
+    vrm.scene.position.sub(center3);
+
+    const sHeight = STANDARD_HEIGHT;
+    const sWidth = size.x * scaleFactor;
+    const sDepth = size.z * scaleFactor;
+    const upperBodyH = Math.max(sWidth, sHeight * 0.55, sDepth);
+    const shoulderY = sHeight * 0.42;
     const fovRad = (camera.fov * Math.PI) / 180;
-    const fitDist = (maxDim * 0.55) / Math.tan(fovRad * 0.5);
-    camera.position.set(0, lookY, fitDist * 1.05);
-    camera.lookAt(0, lookY, 0);
+    const fitDist = (upperBodyH * 0.5) / Math.tan(fovRad * 0.5);
+    camera.position.set(0, shoulderY, fitDist);
+    camera.lookAt(0, shoulderY, 0);
     camera.near = Math.max(0.01, fitDist / 100);
     camera.far = Math.max(100, fitDist * 100);
     camera.updateProjectionMatrix();

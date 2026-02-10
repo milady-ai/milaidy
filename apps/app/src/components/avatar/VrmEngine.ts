@@ -292,17 +292,38 @@ export class VrmEngine {
     const width = Math.max(0.001, size2.x);
     const depth = Math.max(0.001, size2.z);
 
+    // Normalize all models to a standard reference height (~1.0 unit) so
+    // oversized realistic characters and tiny chibi characters appear the
+    // same size in the chat viewport.
+    const STANDARD_HEIGHT = 1.0;
+    const scaleFactor = STANDARD_HEIGHT / height;
+    vrm.scene.scale.multiplyScalar(scaleFactor);
+    vrm.scene.updateMatrixWorld(true);
+
+    // Re-center after scaling
+    const box3 = new THREE.Box3().setFromObject(vrm.scene);
+    const center3 = box3.getCenter(new THREE.Vector3());
+    vrm.scene.position.sub(center3);
+
+    const scaledHeight = STANDARD_HEIGHT;
+    const scaledWidth = width * scaleFactor;
+    const scaledDepth = depth * scaleFactor;
+
     // Frame on upper body: look at shoulder height, zoom in to crop below waist.
     // Offset camera left so the model renders on the right side of the canvas.
-    const upperBodyHeight = Math.max(width, height * 0.55, depth);
-    const shoulderHeight = height * 0.42;
-    const rightShift = width * 0.6; // push model to the right of frame
-
-    this.lookAtTarget.set(-rightShift, shoulderHeight, 0);
+    const upperBodyHeight = Math.max(scaledWidth, scaledHeight * 0.55, scaledDepth);
+    const shoulderHeight = scaledHeight * 0.42;
 
     const fovRad = (camera.fov * Math.PI) / 180;
     const fitDistance = (upperBodyHeight * 0.5) / Math.tan(fovRad * 0.5);
     const distance = fitDistance * 1.0;
+
+    // Compute visible width at the model plane, shift to push model right
+    const visibleH = 2 * distance * Math.tan(fovRad * 0.5);
+    const visibleW = visibleH * (camera.aspect || 1);
+    const rightShift = visibleW * 0.10;
+
+    this.lookAtTarget.set(-rightShift, shoulderHeight, 0);
 
     camera.near = Math.max(0.01, distance / 100);
     camera.far = Math.max(100, distance * 100);

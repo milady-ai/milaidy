@@ -71,6 +71,7 @@ export function CommandPalette() {
       { id: "nav-plugins", label: "Open Plugins", action: () => setTab("plugins") },
       { id: "nav-skills", label: "Open Skills", action: () => setTab("skills") },
       { id: "nav-character", label: "Open Character", action: () => setTab("character") },
+      { id: "nav-config", label: "Open Config", action: () => setTab("config") },
       { id: "nav-admin", label: "Open Admin", action: () => setTab("admin") },
       { id: "nav-inventory", label: "Open Inventory", action: () => setTab("inventory") },
       { id: "nav-apps", label: "Open Apps", action: () => setTab("apps") }
