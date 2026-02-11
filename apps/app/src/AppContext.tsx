@@ -164,6 +164,101 @@ interface ActionNotice {
 
 type GamePostMessageAuthPayload = AppViewerAuthMessage;
 
+const AGENT_STATES: ReadonlySet<AgentStatus["state"]> = new Set([
+  "not_started",
+  "running",
+  "paused",
+  "stopped",
+  "restarting",
+  "error",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseAgentStatusEvent(data: Record<string, unknown>): AgentStatus | null {
+  const state = data.state;
+  const agentName = data.agentName;
+  if (typeof state !== "string" || !AGENT_STATES.has(state as AgentStatus["state"])) {
+    return null;
+  }
+  if (typeof agentName !== "string") return null;
+  const model = typeof data.model === "string" ? data.model : undefined;
+  const startedAt = typeof data.startedAt === "number" ? data.startedAt : undefined;
+  const uptime = typeof data.uptime === "number" ? data.uptime : undefined;
+  return {
+    state: state as AgentStatus["state"],
+    agentName,
+    model,
+    startedAt,
+    uptime,
+  };
+}
+
+function parseStreamEventEnvelopeEvent(
+  data: Record<string, unknown>,
+): StreamEventEnvelope | null {
+  const type = data.type;
+  const eventId = data.eventId;
+  const ts = data.ts;
+  const payload = data.payload;
+  if (
+    (type !== "agent_event" &&
+      type !== "heartbeat_event" &&
+      type !== "training_event") ||
+    typeof eventId !== "string" ||
+    typeof ts !== "number" ||
+    !isRecord(payload)
+  ) {
+    return null;
+  }
+
+  const envelope: StreamEventEnvelope = {
+    type,
+    version: 1,
+    eventId,
+    ts,
+    payload,
+  };
+  if (typeof data.runId === "string") envelope.runId = data.runId;
+  if (typeof data.seq === "number") envelope.seq = data.seq;
+  if (typeof data.stream === "string") envelope.stream = data.stream;
+  if (typeof data.sessionKey === "string") envelope.sessionKey = data.sessionKey;
+  if (typeof data.agentId === "string") envelope.agentId = data.agentId;
+  if (typeof data.roomId === "string") envelope.roomId = data.roomId;
+  return envelope;
+}
+
+function parseConversationMessageEvent(
+  value: unknown,
+): ConversationMessage | null {
+  if (!isRecord(value)) return null;
+  const id = value.id;
+  const role = value.role;
+  const text = value.text;
+  const timestamp = value.timestamp;
+  if (
+    typeof id !== "string" ||
+    (role !== "user" && role !== "assistant") ||
+    typeof text !== "string" ||
+    typeof timestamp !== "number"
+  ) {
+    return null;
+  }
+  return { id, role, text, timestamp };
+}
+
+function parseProactiveMessageEvent(
+  data: Record<string, unknown>,
+): { conversationId: string; message: ConversationMessage } | null {
+  const conversationId = data.conversationId;
+  if (typeof conversationId !== "string") return null;
+  const message = parseConversationMessageEvent(data.message);
+  if (!message) return null;
+  return { conversationId, message };
+}
+
 // ── Context value type ─────────────────────────────────────────────────
 
 export interface AppState {
@@ -493,7 +588,10 @@ export interface AppActions {
   // Character
   loadCharacter: () => Promise<void>;
   handleSaveCharacter: () => Promise<void>;
-  handleCharacterFieldInput: (field: keyof CharacterData, value: string) => void;
+  handleCharacterFieldInput: <K extends keyof CharacterData>(
+    field: K,
+    value: CharacterData[K],
+  ) => void;
   handleCharacterArrayInput: (field: "adjectives" | "topics" | "postExamples", value: string) => void;
   handleCharacterStyleInput: (subfield: "all" | "chat" | "post", value: string) => void;
   handleCharacterMessageExamplesInput: (value: string) => void;
@@ -2008,7 +2106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [characterDraft, agentStatus, loadCharacter, selectedVrmIndex]);
 
   const handleCharacterFieldInput = useCallback(
-    (field: keyof CharacterData, value: string) => {
+    <K extends keyof CharacterData>(field: K, value: CharacterData[K]) => {
       setCharacterDraft((prev: CharacterData) => ({ ...prev, [field]: value }));
     },
     [],
@@ -2425,109 +2523,109 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Generic state setter ───────────────────────────────────────────
 
   const setState = useCallback(<K extends keyof AppState>(key: K, value: AppState[K]) => {
-    const setterMap: Record<string, (v: never) => void> = {
-      tab: setTabRaw as (v: never) => void,
-      chatInput: setChatInput as (v: never) => void,
-      pairingCodeInput: setPairingCodeInput as (v: never) => void,
-      pluginFilter: setPluginFilter as (v: never) => void,
-      pluginStatusFilter: setPluginStatusFilter as (v: never) => void,
-      pluginSearch: setPluginSearch as (v: never) => void,
-      pluginSettingsOpen: setPluginSettingsOpen as (v: never) => void,
-      pluginAdvancedOpen: setPluginAdvancedOpen as (v: never) => void,
-      skillsSubTab: setSkillsSubTab as (v: never) => void,
-      skillCreateFormOpen: setSkillCreateFormOpen as (v: never) => void,
-      skillCreateName: setSkillCreateName as (v: never) => void,
-      skillCreateDescription: setSkillCreateDescription as (v: never) => void,
-      skillsMarketplaceQuery: setSkillsMarketplaceQuery as (v: never) => void,
-      skillsMarketplaceManualGithubUrl: setSkillsMarketplaceManualGithubUrl as (v: never) => void,
-      logTagFilter: setLogTagFilter as (v: never) => void,
-      logLevelFilter: setLogLevelFilter as (v: never) => void,
-      logSourceFilter: setLogSourceFilter as (v: never) => void,
-      inventoryView: setInventoryView as (v: never) => void,
-      inventorySort: setInventorySort as (v: never) => void,
-      exportPassword: setExportPassword as (v: never) => void,
-      exportIncludeLogs: setExportIncludeLogs as (v: never) => void,
-      importPassword: setImportPassword as (v: never) => void,
-      importFile: setImportFile as (v: never) => void,
-      onboardingName: setOnboardingName as (v: never) => void,
-      onboardingStyle: setOnboardingStyle as (v: never) => void,
-      onboardingTheme: setOnboardingTheme as (v: never) => void,
-      onboardingRunMode: setOnboardingRunMode as (v: never) => void,
-      onboardingCloudProvider: setOnboardingCloudProvider as (v: never) => void,
-      onboardingSmallModel: setOnboardingSmallModel as (v: never) => void,
-      onboardingLargeModel: setOnboardingLargeModel as (v: never) => void,
-      onboardingProvider: setOnboardingProvider as (v: never) => void,
-      onboardingApiKey: setOnboardingApiKey as (v: never) => void,
-      onboardingSelectedChains: setOnboardingSelectedChains as (v: never) => void,
-      onboardingRpcSelections: setOnboardingRpcSelections as (v: never) => void,
-      onboardingOpenRouterModel: setOnboardingOpenRouterModel as (v: never) => void,
-      onboardingPrimaryModel: setOnboardingPrimaryModel as (v: never) => void,
-      onboardingTelegramToken: setOnboardingTelegramToken as (v: never) => void,
-      onboardingDiscordToken: setOnboardingDiscordToken as (v: never) => void,
-      onboardingWhatsAppSessionPath: setOnboardingWhatsAppSessionPath as (v: never) => void,
-      onboardingTwilioAccountSid: setOnboardingTwilioAccountSid as (v: never) => void,
-      onboardingTwilioAuthToken: setOnboardingTwilioAuthToken as (v: never) => void,
-      onboardingTwilioPhoneNumber: setOnboardingTwilioPhoneNumber as (v: never) => void,
-      onboardingBlooioApiKey: setOnboardingBlooioApiKey as (v: never) => void,
-      onboardingBlooioPhoneNumber: setOnboardingBlooioPhoneNumber as (v: never) => void,
-      onboardingSubscriptionTab: setOnboardingSubscriptionTab as (v: never) => void,
-      onboardingRpcKeys: setOnboardingRpcKeys as (v: never) => void,
-      onboardingAvatar: setOnboardingAvatar as (v: never) => void,
-      onboardingRestarting: setOnboardingRestarting as (v: never) => void,
-      selectedVrmIndex: setSelectedVrmIndex as (v: never) => void,
-      customVrmUrl: setCustomVrmUrl as (v: never) => void,
-      commandQuery: setCommandQuery as (v: never) => void,
-      commandActiveIndex: setCommandActiveIndex as (v: never) => void,
-      emotePickerOpen: setEmotePickerOpen as (v: never) => void,
-      storeSearch: setStoreSearch as (v: never) => void,
-      storeFilter: setStoreFilter as (v: never) => void,
-      storeSubTab: setStoreSubTab as (v: never) => void,
-      catalogSearch: setCatalogSearch as (v: never) => void,
-      catalogSort: setCatalogSort as (v: never) => void,
-      catalogPage: setCatalogPage as (v: never) => void,
-      skillReviewId: setSkillReviewId as (v: never) => void,
-      skillReviewReport: setSkillReviewReport as (v: never) => void,
-      activeGameApp: setActiveGameApp as (v: never) => void,
-      activeGameDisplayName: setActiveGameDisplayName as (v: never) => void,
-      activeGameViewerUrl: setActiveGameViewerUrl as (v: never) => void,
-      activeGameSandbox: setActiveGameSandbox as (v: never) => void,
-      activeGamePostMessageAuth: setActiveGamePostMessageAuth as (v: never) => void,
-      activeGamePostMessagePayload: setActiveGamePostMessagePayload as (v: never) => void,
-      storePlugins: setStorePlugins as (v: never) => void,
-      storeLoading: setStoreLoading as (v: never) => void,
-      storeInstalling: setStoreInstalling as (v: never) => void,
-      storeUninstalling: setStoreUninstalling as (v: never) => void,
-      storeError: setStoreError as (v: never) => void,
-      storeDetailPlugin: setStoreDetailPlugin as (v: never) => void,
-      catalogSkills: setCatalogSkills as (v: never) => void,
-      catalogTotal: setCatalogTotal as (v: never) => void,
-      catalogTotalPages: setCatalogTotalPages as (v: never) => void,
-      catalogLoading: setCatalogLoading as (v: never) => void,
-      catalogError: setCatalogError as (v: never) => void,
-      catalogDetailSkill: setCatalogDetailSkill as (v: never) => void,
-      catalogInstalling: setCatalogInstalling as (v: never) => void,
-      catalogUninstalling: setCatalogUninstalling as (v: never) => void,
-      mcpConfiguredServers: setMcpConfiguredServers as (v: never) => void,
-      mcpServerStatuses: setMcpServerStatuses as (v: never) => void,
-      mcpMarketplaceQuery: setMcpMarketplaceQuery as (v: never) => void,
-      mcpMarketplaceResults: setMcpMarketplaceResults as (v: never) => void,
-      mcpMarketplaceLoading: setMcpMarketplaceLoading as (v: never) => void,
-      mcpAction: setMcpAction as (v: never) => void,
-      mcpAddingServer: setMcpAddingServer as (v: never) => void,
-      mcpAddingResult: setMcpAddingResult as (v: never) => void,
-      mcpEnvInputs: setMcpEnvInputs as (v: never) => void,
-      mcpHeaderInputs: setMcpHeaderInputs as (v: never) => void,
-      droppedFiles: setDroppedFiles as (v: never) => void,
-      shareIngestNotice: setShareIngestNotice as (v: never) => void,
-      appsSubTab: setAppsSubTab as (v: never) => void,
-      agentSubTab: setAgentSubTab as (v: never) => void,
-      pluginsSubTab: setPluginsSubTab as (v: never) => void,
-      databaseSubTab: setDatabaseSubTab as (v: never) => void,
-      configRaw: setConfigRaw as (v: never) => void,
-      configText: setConfigText as (v: never) => void,
+    const setterMap: Partial<{ [S in keyof AppState]: (v: AppState[S]) => void }> = {
+      tab: setTabRaw,
+      chatInput: setChatInput,
+      pairingCodeInput: setPairingCodeInput,
+      pluginFilter: setPluginFilter,
+      pluginStatusFilter: setPluginStatusFilter,
+      pluginSearch: setPluginSearch,
+      pluginSettingsOpen: setPluginSettingsOpen,
+      pluginAdvancedOpen: setPluginAdvancedOpen,
+      skillsSubTab: setSkillsSubTab,
+      skillCreateFormOpen: setSkillCreateFormOpen,
+      skillCreateName: setSkillCreateName,
+      skillCreateDescription: setSkillCreateDescription,
+      skillsMarketplaceQuery: setSkillsMarketplaceQuery,
+      skillsMarketplaceManualGithubUrl: setSkillsMarketplaceManualGithubUrl,
+      logTagFilter: setLogTagFilter,
+      logLevelFilter: setLogLevelFilter,
+      logSourceFilter: setLogSourceFilter,
+      inventoryView: setInventoryView,
+      inventorySort: setInventorySort,
+      exportPassword: setExportPassword,
+      exportIncludeLogs: setExportIncludeLogs,
+      importPassword: setImportPassword,
+      importFile: setImportFile,
+      onboardingName: setOnboardingName,
+      onboardingStyle: setOnboardingStyle,
+      onboardingTheme: setOnboardingTheme,
+      onboardingRunMode: setOnboardingRunMode,
+      onboardingCloudProvider: setOnboardingCloudProvider,
+      onboardingSmallModel: setOnboardingSmallModel,
+      onboardingLargeModel: setOnboardingLargeModel,
+      onboardingProvider: setOnboardingProvider,
+      onboardingApiKey: setOnboardingApiKey,
+      onboardingSelectedChains: setOnboardingSelectedChains,
+      onboardingRpcSelections: setOnboardingRpcSelections,
+      onboardingOpenRouterModel: setOnboardingOpenRouterModel,
+      onboardingPrimaryModel: setOnboardingPrimaryModel,
+      onboardingTelegramToken: setOnboardingTelegramToken,
+      onboardingDiscordToken: setOnboardingDiscordToken,
+      onboardingWhatsAppSessionPath: setOnboardingWhatsAppSessionPath,
+      onboardingTwilioAccountSid: setOnboardingTwilioAccountSid,
+      onboardingTwilioAuthToken: setOnboardingTwilioAuthToken,
+      onboardingTwilioPhoneNumber: setOnboardingTwilioPhoneNumber,
+      onboardingBlooioApiKey: setOnboardingBlooioApiKey,
+      onboardingBlooioPhoneNumber: setOnboardingBlooioPhoneNumber,
+      onboardingSubscriptionTab: setOnboardingSubscriptionTab,
+      onboardingRpcKeys: setOnboardingRpcKeys,
+      onboardingAvatar: setOnboardingAvatar,
+      onboardingRestarting: setOnboardingRestarting,
+      selectedVrmIndex: setSelectedVrmIndex,
+      customVrmUrl: setCustomVrmUrl,
+      commandQuery: setCommandQuery,
+      commandActiveIndex: setCommandActiveIndex,
+      emotePickerOpen: setEmotePickerOpen,
+      storeSearch: setStoreSearch,
+      storeFilter: setStoreFilter,
+      storeSubTab: setStoreSubTab,
+      catalogSearch: setCatalogSearch,
+      catalogSort: setCatalogSort,
+      catalogPage: setCatalogPage,
+      skillReviewId: setSkillReviewId,
+      skillReviewReport: setSkillReviewReport,
+      activeGameApp: setActiveGameApp,
+      activeGameDisplayName: setActiveGameDisplayName,
+      activeGameViewerUrl: setActiveGameViewerUrl,
+      activeGameSandbox: setActiveGameSandbox,
+      activeGamePostMessageAuth: setActiveGamePostMessageAuth,
+      activeGamePostMessagePayload: setActiveGamePostMessagePayload,
+      storePlugins: setStorePlugins,
+      storeLoading: setStoreLoading,
+      storeInstalling: setStoreInstalling,
+      storeUninstalling: setStoreUninstalling,
+      storeError: setStoreError,
+      storeDetailPlugin: setStoreDetailPlugin,
+      catalogSkills: setCatalogSkills,
+      catalogTotal: setCatalogTotal,
+      catalogTotalPages: setCatalogTotalPages,
+      catalogLoading: setCatalogLoading,
+      catalogError: setCatalogError,
+      catalogDetailSkill: setCatalogDetailSkill,
+      catalogInstalling: setCatalogInstalling,
+      catalogUninstalling: setCatalogUninstalling,
+      mcpConfiguredServers: setMcpConfiguredServers,
+      mcpServerStatuses: setMcpServerStatuses,
+      mcpMarketplaceQuery: setMcpMarketplaceQuery,
+      mcpMarketplaceResults: setMcpMarketplaceResults,
+      mcpMarketplaceLoading: setMcpMarketplaceLoading,
+      mcpAction: setMcpAction,
+      mcpAddingServer: setMcpAddingServer,
+      mcpAddingResult: setMcpAddingResult,
+      mcpEnvInputs: setMcpEnvInputs,
+      mcpHeaderInputs: setMcpHeaderInputs,
+      droppedFiles: setDroppedFiles,
+      shareIngestNotice: setShareIngestNotice,
+      appsSubTab: setAppsSubTab,
+      agentSubTab: setAgentSubTab,
+      pluginsSubTab: setPluginsSubTab,
+      databaseSubTab: setDatabaseSubTab,
+      configRaw: setConfigRaw,
+      configText: setConfigText,
     };
-    const setter = setterMap[key as string];
-    if (setter) setter(value as never);
+    const setter = setterMap[key];
+    if (setter) setter(value);
   }, []);
 
   // ── Initialization ─────────────────────────────────────────────────
@@ -2537,6 +2635,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let unbindStatus: (() => void) | null = null;
     let unbindAgentEvents: (() => void) | null = null;
     let unbindHeartbeatEvents: (() => void) | null = null;
+    let unbindProactiveMessages: (() => void) | null = null;
 
     const initApp = async () => {
       const MAX_RETRIES = 15;
@@ -2640,13 +2739,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Connect WebSocket
       client.connectWs();
       unbindStatus = client.onWsEvent("status", (data: Record<string, unknown>) => {
-        setAgentStatus(data as unknown as AgentStatus);
+        const nextStatus = parseAgentStatusEvent(data);
+        if (nextStatus) {
+          setAgentStatus(nextStatus);
+        }
       });
       unbindAgentEvents = client.onWsEvent("agent_event", (data: Record<string, unknown>) => {
-        appendAutonomousEvent(data as unknown as StreamEventEnvelope);
+        const event = parseStreamEventEnvelopeEvent(data);
+        if (event) {
+          appendAutonomousEvent(event);
+        }
       });
       unbindHeartbeatEvents = client.onWsEvent("heartbeat_event", (data: Record<string, unknown>) => {
-        appendAutonomousEvent(data as unknown as StreamEventEnvelope);
+        const event = parseStreamEventEnvelopeEvent(data);
+        if (event) {
+          appendAutonomousEvent(event);
+        }
       });
 
       try {
@@ -2660,40 +2768,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // Handle proactive messages from autonomy
-      client.onWsEvent("proactive-message", (data: Record<string, unknown>) => {
-        const convId = data.conversationId as string;
-        const msg = data.message as ConversationMessage;
-
-        if (convId === activeConversationIdRef.current) {
-          // Active conversation — append in real-time (deduplicate by id)
-          setConversationMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-        } else {
-          // Non-active — mark unread
-          setUnreadConversations((prev) => new Set([...prev, convId]));
-        }
-
-        // Bump conversation to top of list
-        setConversations((prev) => {
-          const updated = prev.map((c) =>
-            c.id === convId
-              ? { ...c, updatedAt: new Date().toISOString() }
-              : c,
-          );
-          return updated.sort(
-            (a, b) =>
-              new Date(b.updatedAt).getTime() -
-              new Date(a.updatedAt).getTime(),
-          );
-        });
-      });
-
-      // Handle proactive messages from autonomy
-      client.onWsEvent("proactive-message", (data: Record<string, unknown>) => {
-        const convId = data.conversationId as string;
-        const msg = data.message as ConversationMessage;
+      unbindProactiveMessages = client.onWsEvent("proactive-message", (data: Record<string, unknown>) => {
+        const parsed = parseProactiveMessageEvent(data);
+        if (!parsed) return;
+        const { conversationId: convId, message: msg } = parsed;
 
         if (convId === activeConversationIdRef.current) {
           // Active conversation — append in real-time (deduplicate by id)
@@ -2807,6 +2885,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unbindStatus?.();
       unbindAgentEvents?.();
       unbindHeartbeatEvents?.();
+      unbindProactiveMessages?.();
       client.disconnectWs();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

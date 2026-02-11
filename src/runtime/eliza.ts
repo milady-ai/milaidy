@@ -62,6 +62,7 @@ import {
   type SandboxMode,
 } from "../services/sandbox-manager.js";
 import { diagnoseNoAIProvider } from "../services/version-compat.js";
+import { CORE_PLUGINS, OPTIONAL_CORE_PLUGINS } from "./core-plugins.js";
 import { createMilaidyPlugin } from "./milaidy-plugin.js";
 import {
   createPhettaCompanionPlugin,
@@ -151,40 +152,7 @@ const CHANNEL_ENV_MAP: Readonly<
 // Plugin resolution
 // ---------------------------------------------------------------------------
 
-/** Core plugins that should always be loaded. */
-export const CORE_PLUGINS: readonly string[] = [
-  "@elizaos/plugin-sql", // database adapter — required
-  "@elizaos/plugin-local-embedding", // local embeddings — required for memory
-  "@elizaos/plugin-knowledge", // RAG knowledge management — required for knowledge tab
-  "@elizaos/plugin-trajectory-logger", // trajectory logging for debugging and RL training
-  "@elizaos/plugin-agent-skills", // skill execution
-  "@elizaos/plugin-agent-orchestrator", // multi-agent orchestration
-  "@elizaos/plugin-shell", // shell command execution
-  "@elizaos/plugin-plugin-manager", // dynamic plugin management
-];
-
-/**
- * Plugins that can be enabled from the admin panel.
- * Not loaded by default — kept separate due to packaging or spec issues.
- */
-export const OPTIONAL_CORE_PLUGINS: readonly string[] = [
-  "@elizaos/plugin-form", // packaging issue
-  "@elizaos/plugin-goals", // spec mismatch
-  "@elizaos/plugin-scheduling", // packaging issue
-  "@elizaos/plugin-directives", // directive processing
-  "@elizaos/plugin-commands", // slash command handling
-  "@elizaos/plugin-personality", // personality coherence
-  "@elizaos/plugin-experience", // learning from interactions
-  "@elizaos/plugin-cli", // CLI interface
-  "@elizaos/plugin-code", // code writing and file operations
-  "@elizaos/plugin-edge-tts", // text-to-speech
-  "@elizaos/plugin-mcp", // MCP protocol support
-  "@elizaos/plugin-pdf", // PDF processing
-  "@elizaos/plugin-scratchpad", // scratchpad notes
-  "@elizaos/plugin-secrets-manager", // secrets management
-  "@elizaos/plugin-todo", // todo/task management
-  "@elizaos/plugin-trust", // trust scoring
-];
+export { CORE_PLUGINS, OPTIONAL_CORE_PLUGINS };
 
 /**
  * Optional plugins that require native binaries or specific config.

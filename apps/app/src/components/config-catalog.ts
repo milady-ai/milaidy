@@ -244,7 +244,7 @@ export function evaluateShowIf(
   switch (condition.op) {
     case "eq": return val === condition.value;
     case "neq": return val !== condition.value;
-    case "in": return Array.isArray(condition.value) && (condition.value as unknown[]).includes(val);
+    case "in": return Array.isArray(condition.value) && condition.value.includes(val);
     case "truthy": return Boolean(val);
     case "falsy": return !val;
     default: return true;

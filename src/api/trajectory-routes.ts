@@ -260,12 +260,30 @@ function getTrajectoryLogger(
 ): TrajectoryLoggerService | null {
   if (!runtime) return null;
 
-  // The core may register a minimal trajectory logger that doesn't have listTrajectories.
-  // We need to find the full-featured one from plugin-trajectory-logger.
-  const services = runtime.getServicesByType(
-    "trajectory_logger",
-  ) as unknown as TrajectoryLoggerService[];
-  if (!services || services.length === 0) return null;
+  // Runtime API shape differs across versions:
+  // - newer runtimes expose getServicesByType()
+  // - older/test runtimes may only expose getService()
+  const runtimeLike = runtime as unknown as {
+    getServicesByType?: (serviceType: string) => unknown;
+    getService?: (serviceType: string) => unknown;
+  };
+
+  const services: TrajectoryLoggerService[] = [];
+  if (typeof runtimeLike.getServicesByType === "function") {
+    const byType = runtimeLike.getServicesByType("trajectory_logger");
+    if (Array.isArray(byType)) {
+      services.push(...(byType as TrajectoryLoggerService[]));
+    } else if (byType) {
+      services.push(byType as TrajectoryLoggerService);
+    }
+  }
+  if (services.length === 0 && typeof runtimeLike.getService === "function") {
+    const single = runtimeLike.getService("trajectory_logger");
+    if (single) {
+      services.push(single as TrajectoryLoggerService);
+    }
+  }
+  if (services.length === 0) return null;
 
   // Find the service that has the listTrajectories method (the full plugin version)
   for (const svc of services) {

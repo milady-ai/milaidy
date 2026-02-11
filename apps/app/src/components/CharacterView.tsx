@@ -11,7 +11,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useApp } from "../AppContext";
-import { client, type VoiceConfig } from "../api-client";
+import { client, type CharacterData, type VoiceConfig } from "../api-client";
 import { AvatarSelector } from "./AvatarSelector";
 import { ConfigRenderer, defaultRegistry } from "./config-renderer";
 import type { ConfigUiHint } from "../types";
@@ -192,6 +192,64 @@ function ThemedSelect<T extends string>({
   );
 }
 
+type CharacterConversation = NonNullable<CharacterData["messageExamples"]>[number];
+type CharacterMessage = CharacterConversation["examples"][number];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out = value.filter((item): item is string => typeof item === "string");
+  return out.length > 0 ? out : [];
+}
+
+function parseImportedMessage(value: unknown): CharacterMessage | null {
+  if (!isRecord(value)) return null;
+  const speaker =
+    typeof value.user === "string"
+      ? value.user
+      : typeof value.name === "string"
+        ? value.name
+        : "{{user1}}";
+  const content = value.content;
+  const contentText =
+    isRecord(content) && typeof content.text === "string"
+      ? content.text
+      : typeof value.text === "string"
+        ? value.text
+        : "";
+  return {
+    name: speaker,
+    content: { text: contentText },
+  };
+}
+
+function parseImportedMessageExamples(
+  value: unknown,
+): CharacterData["messageExamples"] {
+  if (!Array.isArray(value)) return [];
+  const conversations: CharacterConversation[] = [];
+  for (const convo of value) {
+    const source = Array.isArray(convo)
+      ? convo
+      : isRecord(convo) && Array.isArray(convo.examples)
+        ? convo.examples
+        : null;
+    if (!source) continue;
+    const examples: CharacterMessage[] = [];
+    for (const message of source) {
+      const parsed = parseImportedMessage(message);
+      if (parsed) examples.push(parsed);
+    }
+    if (examples.length > 0) {
+      conversations.push({ examples });
+    }
+  }
+  return conversations;
+}
+
 /* ── CharacterView ──────────────────────────────────────────────────── */
 
 export function CharacterView() {
@@ -236,9 +294,12 @@ export function CharacterView() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFieldEdit = useCallback((field: string, value: string | string[] | Record<string, unknown>[]) => {
-    handleCharacterFieldInput(field as never, value as never);
-  }, [handleCharacterFieldInput]);
+  const handleFieldEdit = useCallback(
+    <K extends keyof CharacterData>(field: K, value: CharacterData[K]) => {
+      handleCharacterFieldInput(field, value);
+    },
+    [handleCharacterFieldInput],
+  );
 
   const handleStyleEdit = useCallback((key: "all" | "chat" | "post", value: string) => {
     handleCharacterStyleInput(key, value);
@@ -258,11 +319,11 @@ export function CharacterView() {
       },
       adjectives: d.adjectives ?? [],
       topics: d.topics ?? [],
-      messageExamples: (d.messageExamples ?? []).map((convo: any) =>
-        (convo.examples ?? []).map((msg: any) => ({
+      messageExamples: (d.messageExamples ?? []).map((convo) =>
+        (convo.examples ?? []).map((msg) => ({
           user: msg.name,
           content: { text: msg.content?.text ?? "" },
-        }))
+        })),
       ),
       postExamples: d.postExamples ?? [],
     };
@@ -281,31 +342,52 @@ export function CharacterView() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result as string);
-        if (data.name) handleCharacterFieldInput("name", data.name);
-        if (data.bio) handleCharacterFieldInput("bio",
-          Array.isArray(data.bio) ? data.bio.join("\n") : data.bio);
-        if (data.system) handleCharacterFieldInput("system", data.system);
-        if (data.adjectives) handleCharacterFieldInput("adjectives" as any, data.adjectives);
-        if (data.topics) handleCharacterFieldInput("topics" as any, data.topics);
-        if (data.style) {
-          if (data.style.all) handleCharacterStyleInput("all",
-            Array.isArray(data.style.all) ? data.style.all.join("\n") : data.style.all);
-          if (data.style.chat) handleCharacterStyleInput("chat",
-            Array.isArray(data.style.chat) ? data.style.chat.join("\n") : data.style.chat);
-          if (data.style.post) handleCharacterStyleInput("post",
-            Array.isArray(data.style.post) ? data.style.post.join("\n") : data.style.post);
+        const rawText = reader.result;
+        if (typeof rawText !== "string") throw new Error("invalid file");
+        const parsed: unknown = JSON.parse(rawText);
+        if (!isRecord(parsed)) throw new Error("invalid file");
+
+        if (typeof parsed.name === "string") {
+          handleCharacterFieldInput("name", parsed.name);
         }
-        if (data.messageExamples) {
-          const formatted = data.messageExamples.map((convo: any[]) => ({
-            examples: convo.map((msg: any) => ({
-              name: msg.user ?? msg.name ?? "{{user1}}",
-              content: { text: msg.content?.text ?? msg.text ?? "" },
-            })),
-          }));
-          handleCharacterFieldInput("messageExamples" as any, formatted);
+        if (typeof parsed.bio === "string") {
+          handleCharacterFieldInput("bio", parsed.bio);
+        } else {
+          const bio = readStringArray(parsed.bio);
+          if (bio) {
+            handleCharacterFieldInput("bio", bio.join("\n"));
+          }
         }
-        if (data.postExamples) handleCharacterFieldInput("postExamples" as any, data.postExamples);
+        if (typeof parsed.system === "string") {
+          handleCharacterFieldInput("system", parsed.system);
+        }
+
+        const adjectives = readStringArray(parsed.adjectives);
+        if (adjectives) handleCharacterFieldInput("adjectives", adjectives);
+        const topics = readStringArray(parsed.topics);
+        if (topics) handleCharacterFieldInput("topics", topics);
+
+        if (isRecord(parsed.style)) {
+          const all = readStringArray(parsed.style.all);
+          if (all) handleCharacterStyleInput("all", all.join("\n"));
+          else if (typeof parsed.style.all === "string") handleCharacterStyleInput("all", parsed.style.all);
+
+          const chat = readStringArray(parsed.style.chat);
+          if (chat) handleCharacterStyleInput("chat", chat.join("\n"));
+          else if (typeof parsed.style.chat === "string") handleCharacterStyleInput("chat", parsed.style.chat);
+
+          const post = readStringArray(parsed.style.post);
+          if (post) handleCharacterStyleInput("post", post.join("\n"));
+          else if (typeof parsed.style.post === "string") handleCharacterStyleInput("post", parsed.style.post);
+        }
+
+        const messageExamples = parseImportedMessageExamples(parsed.messageExamples);
+        if (messageExamples.length > 0) {
+          handleCharacterFieldInput("messageExamples", messageExamples);
+        }
+
+        const postExamples = readStringArray(parsed.postExamples);
+        if (postExamples) handleCharacterFieldInput("postExamples", postExamples);
       } catch {
         alert("invalid json file");
       }
@@ -866,7 +948,7 @@ export function CharacterView() {
                       remove
                     </button>
                   </div>
-                  {convo.examples.map((msg: any, mi: number) => (
+                  {convo.examples.map((msg, mi) => (
                     <div key={mi} className="flex gap-2 mb-1 last:mb-0">
                       <span className={`text-[10px] font-semibold shrink-0 w-16 pt-0.5 ${msg.name === "{{user1}}" ? "text-[var(--muted)]" : "text-[var(--accent)]"}`}>
                         {msg.name === "{{user1}}" ? "user" : "agent"}

@@ -40,6 +40,13 @@ interface SpeechRecognitionResultList {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
 
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
+
 // ── Public types ──────────────────────────────────────────────────────
 
 export interface VoiceChatOptions {
@@ -110,8 +117,7 @@ export function useVoiceChat(options: VoiceChatOptions): VoiceChatState {
 
   useEffect(() => {
     const SpeechRecognitionAPI: SpeechRecognitionCtor | undefined =
-      (window as unknown as Record<string, SpeechRecognitionCtor | undefined>).SpeechRecognition ??
-      (window as unknown as Record<string, SpeechRecognitionCtor | undefined>).webkitSpeechRecognition;
+      window.SpeechRecognition ?? window.webkitSpeechRecognition;
     setSupported(!!SpeechRecognitionAPI && !!window.speechSynthesis);
     synthRef.current = window.speechSynthesis ?? null;
   }, []);
@@ -169,8 +175,7 @@ export function useVoiceChat(options: VoiceChatOptions): VoiceChatState {
 
   const startRecognition = useCallback(() => {
     const SpeechRecognitionAPI: SpeechRecognitionCtor | undefined =
-      (window as unknown as Record<string, SpeechRecognitionCtor | undefined>).SpeechRecognition ??
-      (window as unknown as Record<string, SpeechRecognitionCtor | undefined>).webkitSpeechRecognition;
+      window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) return;
 
     const recognition = new SpeechRecognitionAPI();

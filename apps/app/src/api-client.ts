@@ -1452,6 +1452,13 @@ export interface PermissionDefinition {
   requiredForFeatures: string[];
 }
 
+declare global {
+  interface Window {
+    __MILAIDY_API_BASE__?: string;
+    __MILAIDY_API_TOKEN__?: string;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -1476,10 +1483,9 @@ export class MilaidyClient {
         : null;
     this._token = token?.trim() || stored || null;
     // Priority: explicit arg > Capacitor/Electron injected global > same origin (Vite proxy)
-    const global = typeof window !== "undefined"
-      ? (window as unknown as Record<string, unknown>).__MILAIDY_API_BASE__
-      : undefined;
-    this._baseUrl = baseUrl ?? (typeof global === "string" ? global : "");
+    const injectedBase =
+      typeof window !== "undefined" ? window.__MILAIDY_API_BASE__ : undefined;
+    this._baseUrl = baseUrl ?? (injectedBase ?? "");
   }
 
   /**
@@ -1490,8 +1496,8 @@ export class MilaidyClient {
    */
   private get baseUrl(): string {
     if (!this._baseUrl && !this._explicitBase && typeof window !== "undefined") {
-      const injected = (window as unknown as Record<string, unknown>).__MILAIDY_API_BASE__;
-      if (typeof injected === "string") {
+      const injected = window.__MILAIDY_API_BASE__;
+      if (injected) {
         this._baseUrl = injected;
       }
     }
@@ -1501,7 +1507,7 @@ export class MilaidyClient {
   private get apiToken(): string | null {
     if (this._token) return this._token;
     if (typeof window === "undefined") return null;
-    const injected = (window as unknown as Record<string, unknown>).__MILAIDY_API_TOKEN__;
+    const injected = window.__MILAIDY_API_TOKEN__;
     if (typeof injected === "string" && injected.trim()) return injected.trim();
     return null;
   }

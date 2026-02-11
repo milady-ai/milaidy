@@ -637,6 +637,12 @@ describe("trajectory collection bridge e2e", () => {
         }
         return null;
       },
+      getServicesByType: (serviceType: string) => {
+        if (serviceType === "trajectory_logger") {
+          return [trajectoryLogger];
+        }
+        return [];
+      },
       getRoom: async (roomId: string) => ({
         id: roomId,
         source: "chat",

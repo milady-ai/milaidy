@@ -17,8 +17,6 @@ export type ChannelUiMetaEntry = {
   systemImage?: string;
 };
 
-export const CRON_CHANNEL_LAST = "last";
-
 export type ChannelAccountSnapshot = {
   accountId: string;
   name?: string | null;
@@ -452,23 +450,6 @@ export interface PluginUiTheme {
   /** Max width for text inputs (default: "32rem") */
   maxFieldWidth: string;
 }
-
-/** Default theme values matching the built-in design tokens. */
-export const DEFAULT_PLUGIN_UI_THEME: PluginUiTheme = {
-  fieldGap: "1rem",
-  groupGap: "1.5rem",
-  sectionPadding: "1.5rem",
-  labelSize: "0.8125rem",
-  helpSize: "0.6875rem",
-  errorSize: "0.6875rem",
-  labelColor: "var(--txt)",
-  helpColor: "var(--muted)",
-  errorColor: "var(--destructive)",
-  borderColor: "var(--border)",
-  focusRing: "var(--accent)",
-  inputHeight: "2.25rem",
-  maxFieldWidth: "32rem",
-};
 
 export type ConfigUiHints = Record<string, ConfigUiHint>;
 
