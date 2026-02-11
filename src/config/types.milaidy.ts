@@ -604,6 +604,19 @@ export type MilaidyConfig = {
   talk?: TalkConfig;
   gateway?: GatewayConfig;
   memory?: MemoryConfig;
+  /** Local embedding model configuration (Metal GPU, idle unloading, model selection). */
+  embedding?: {
+    /** GGUF model filename (e.g. "nomic-embed-text-v1.5.Q5_K_M.gguf") */
+    model?: string;
+    /** HuggingFace repo for auto-download */
+    modelRepo?: string;
+    /** Embedding vector dimensions */
+    dimensions?: number;
+    /** GPU layers for model loading: "auto", "max", or a number */
+    gpuLayers?: "auto" | "max" | number;
+    /** Minutes of inactivity before unloading model from memory (default: 30, 0 = never) */
+    idleTimeoutMinutes?: number;
+  };
   /** Database provider and connection configuration (local-only feature). */
   database?: DatabaseConfig;
   /** ElizaCloud integration for remote agent provisioning and inference. */
