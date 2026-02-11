@@ -36,6 +36,65 @@ export function registerCustomActionLive(def: CustomActionDef): Action | null {
 /** API port for shell handler requests. */
 const API_PORT = process.env.API_PORT || process.env.SERVER_PORT || "2138";
 
+/** Valid handler types that we actually support. */
+const VALID_HANDLER_TYPES = new Set(["http", "shell", "code"]);
+
+/**
+ * Shell-escape a value so it can be safely interpolated into a shell command.
+ * Wraps in single quotes and escapes any embedded single quotes.
+ */
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Check whether a URL targets a private/internal network (SSRF guard).
+ * Blocks loopback, link-local, and RFC-1918 ranges except our own API.
+ */
+function isBlockedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Allow requests to our own API (terminal/run endpoint etc.)
+    if (
+      (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") &&
+      parsed.port === String(API_PORT)
+    ) {
+      return false;
+    }
+
+    // Block common internal targets
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0" ||
+      hostname.endsWith(".local") ||
+      hostname === "[::1]" ||
+      hostname === "metadata.google.internal" ||
+      hostname === "169.254.169.254"
+    ) {
+      return true;
+    }
+
+    // Block RFC-1918 / link-local ranges
+    const parts = hostname.split(".");
+    if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
+      const [a, b] = parts.map(Number);
+      if (a === 10) return true;                         // 10.0.0.0/8
+      if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16.0.0/12
+      if (a === 192 && b === 168) return true;            // 192.168.0.0/16
+      if (a === 169 && b === 254) return true;            // link-local
+    }
+
+    return false;
+  } catch {
+    // Malformed URL — block it
+    return true;
+  }
+}
+
 /**
  * Build an async handler function from a CustomActionHandler definition.
  */
@@ -43,6 +102,10 @@ function buildHandler(
   handler: CustomActionHandler,
   paramDefs: CustomActionDef["parameters"],
 ): (params: Record<string, string>) => Promise<{ ok: boolean; output: string }> {
+  if (!VALID_HANDLER_TYPES.has(handler.type)) {
+    return async () => ({ ok: false, output: `Unsupported handler type: ${handler.type}` });
+  }
+
   switch (handler.type) {
     case "http":
       return async (params) => {
@@ -51,10 +114,16 @@ function buildHandler(
         const headers: Record<string, string> = { ...handler.headers };
 
         // Substitute {{paramName}} placeholders
+        // URL values get URI-encoded, body values are left raw (JSON context)
         for (const p of paramDefs) {
           const value = params[p.name] ?? "";
-          url = url.replaceAll(`{{${p.name}}}`, value);
+          url = url.replaceAll(`{{${p.name}}}`, encodeURIComponent(value));
           body = body.replaceAll(`{{${p.name}}}`, value);
+        }
+
+        // SSRF guard — block requests to internal/private networks
+        if (isBlockedUrl(url)) {
+          return { ok: false, output: "Blocked: cannot make requests to internal network addresses" };
         }
 
         if (!headers["Content-Type"] && body) {
@@ -77,9 +146,10 @@ function buildHandler(
     case "shell":
       return async (params) => {
         let command = handler.command;
+        // Shell-escape parameter values to prevent injection
         for (const p of paramDefs) {
           const value = params[p.name] ?? "";
-          command = command.replaceAll(`{{${p.name}}}`, value);
+          command = command.replaceAll(`{{${p.name}}}`, shellEscape(value));
         }
 
         const response = await fetch(
@@ -99,6 +169,10 @@ function buildHandler(
       };
 
     case "code":
+      // NOTE: code handlers run user-authored code from local config with
+      // the same privileges as the host process. This is intentional for a
+      // desktop app — the owner wrote the code. We restrict the sandbox to
+      // only expose `params` and `fetch`; no require/import/process/global.
       return async (params) => {
         const fn = new Function(
           "params",

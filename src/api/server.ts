@@ -5681,6 +5681,14 @@ async function handleRequest(
       return;
     }
 
+    // Validate npm package name format to prevent path traversal or injection.
+    // Scoped: @scope/name, Unscoped: name
+    const npmNamePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+    if (!npmNamePattern.test(pluginName)) {
+      error(res, "Invalid plugin name format", 400);
+      return;
+    }
+
     const { installPlugin } = await import("../services/plugin-installer.js");
 
     try {
@@ -7606,12 +7614,18 @@ async function handleRequest(
       error(res, "Missing connector name", 400);
       return;
     }
+    // Prevent prototype pollution via special keys
+    const connName = name.trim();
+    if (connName === "__proto__" || connName === "constructor" || connName === "prototype") {
+      error(res, "Invalid connector name", 400);
+      return;
+    }
     if (!config || typeof config !== "object") {
       error(res, "Missing connector config", 400);
       return;
     }
     if (!state.config.connectors) state.config.connectors = {};
-    state.config.connectors[name.trim()] = config as ConnectorConfig;
+    state.config.connectors[connName] = config as ConnectorConfig;
     try {
       saveMilaidyConfig(state.config);
     } catch {
@@ -7628,15 +7642,15 @@ async function handleRequest(
   // ── DELETE /api/connectors/:name ─────────────────────────────────────────
   if (method === "DELETE" && pathname.startsWith("/api/connectors/")) {
     const name = decodeURIComponent(pathname.slice("/api/connectors/".length));
-    if (!name) {
-      error(res, "Missing connector name", 400);
+    if (!name || name === "__proto__" || name === "constructor" || name === "prototype") {
+      error(res, "Missing or invalid connector name", 400);
       return;
     }
-    if (state.config.connectors) {
+    if (state.config.connectors && Object.hasOwn(state.config.connectors, name)) {
       delete state.config.connectors[name];
     }
     // Also remove from legacy channels key
-    if (state.config.channels) {
+    if (state.config.channels && Object.hasOwn(state.config.channels, name)) {
       delete state.config.channels[name];
     }
     try {
@@ -9701,6 +9715,12 @@ async function handleRequest(
       return;
     }
 
+    // Guard against excessively long commands (likely injection or abuse)
+    if (command.length > 4096) {
+      error(res, "Command exceeds maximum length (4096 chars)", 400);
+      return;
+    }
+
     // Respond immediately — output streams via WebSocket
     json(res, { ok: true });
 
@@ -9781,8 +9801,23 @@ async function handleRequest(
     }
 
     const handler = body.handler as CustomActionDef["handler"] | undefined;
-    if (!handler || !handler.type) {
-      error(res, "handler with type is required", 400);
+    const validHandlerTypes = new Set(["http", "shell", "code"]);
+    if (!handler || !handler.type || !validHandlerTypes.has(handler.type)) {
+      error(res, "handler with valid type (http, shell, code) is required", 400);
+      return;
+    }
+
+    // Validate type-specific required fields
+    if (handler.type === "http" && (typeof handler.url !== "string" || !handler.url.trim())) {
+      error(res, "HTTP handler requires a url", 400);
+      return;
+    }
+    if (handler.type === "shell" && (typeof handler.command !== "string" || !handler.command.trim())) {
+      error(res, "Shell handler requires a command", 400);
+      return;
+    }
+    if (handler.type === "code" && (typeof handler.code !== "string" || !handler.code.trim())) {
+      error(res, "Code handler requires code", 400);
       return;
     }
 
@@ -9919,13 +9954,26 @@ async function handleRequest(
     }
 
     const existing = actions[idx];
+
+    // Validate handler if provided in the update
+    let newHandler = existing.handler;
+    if (body.handler != null) {
+      const h = body.handler as Record<string, unknown>;
+      const hValidTypes = new Set(["http", "shell", "code"]);
+      if (!h.type || !hValidTypes.has(h.type as string)) {
+        error(res, "handler.type must be http, shell, or code", 400);
+        return;
+      }
+      newHandler = h as unknown as CustomActionDef["handler"];
+    }
+
     const updated: CustomActionDef = {
       ...existing,
       name: typeof body.name === "string" ? body.name.trim().toUpperCase().replace(/\s+/g, "_") : existing.name,
       description: typeof body.description === "string" ? body.description.trim() : existing.description,
       similes: Array.isArray(body.similes) ? body.similes.filter((s): s is string => typeof s === "string") : existing.similes,
       parameters: Array.isArray(body.parameters) ? (body.parameters as CustomActionDef["parameters"]) : existing.parameters,
-      handler: (body.handler as CustomActionDef["handler"]) ?? existing.handler,
+      handler: newHandler,
       enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
       updatedAt: new Date().toISOString(),
     };
