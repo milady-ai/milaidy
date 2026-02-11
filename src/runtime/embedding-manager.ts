@@ -197,8 +197,19 @@ function downloadFile(
               );
               return;
             }
-            // Resolve relative redirect URLs
-            const next = new URL(res.headers.location, reqUrl).toString();
+            // Resolve relative redirect URLs (guard against malformed headers)
+            let next: string;
+            try {
+              next = new URL(res.headers.location, reqUrl).toString();
+            } catch {
+              cleanup();
+              reject(
+                new Error(
+                  `Download failed: malformed redirect URL "${res.headers.location}"`,
+                ),
+              );
+              return;
+            }
             request(next);
             return;
           }
@@ -274,6 +285,8 @@ export class MilaidyEmbeddingManager {
   private disposed = false;
   /** Track in-flight generateEmbedding calls to prevent idle unload during use. */
   private inFlightCount = 0;
+  /** Serialized unload promise — prevents generateEmbedding from using resources being disposed. */
+  private unloading: Promise<void> | null = null;
   /** Only write dimension metadata on the very first init (not idle re-inits). */
   private dimensionCheckDone = false;
 
@@ -293,6 +306,10 @@ export class MilaidyEmbeddingManager {
     if (this.disposed) {
       throw new Error("[milaidy] EmbeddingManager has been disposed");
     }
+
+    // If an idle unload is in progress, wait for it to finish before
+    // re-initializing — prevents using resources mid-dispose.
+    if (this.unloading) await this.unloading;
 
     await this.ensureInitialized();
 
@@ -456,9 +473,15 @@ export class MilaidyEmbeddingManager {
 
   private async idleUnload(): Promise<void> {
     this.stopIdleTimer();
-    await this.releaseModelResources();
-    // Mark as not initialized so next call triggers lazy re-init
-    this.initialized = false;
+    // Publish the unload promise so concurrent generateEmbedding() calls
+    // can await it instead of racing with resource disposal.
+    const unloadWork = this.releaseModelResources().then(() => {
+      // Mark as not initialized so next call triggers lazy re-init
+      this.initialized = false;
+      this.unloading = null;
+    });
+    this.unloading = unloadWork;
+    await unloadWork;
   }
 
   // ── Resource cleanup ────────────────────────────────────────────────────
