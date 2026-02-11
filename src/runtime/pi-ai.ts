@@ -25,11 +25,18 @@ function parseModelSpec(spec: string): { provider: string; id: string } {
 
 export type RegisterPiAiRuntimeOptions = {
   /**
-   * Override the pi-ai model spec, format: provider/modelId
-   * (e.g. anthropic/claude-sonnet-4-20250514)
+   * Legacy override: pi-ai model spec, format: provider/modelId
+   * (e.g. anthropic/claude-sonnet-4-20250514).
+   *
+   * When provided, this is used for both TEXT_SMALL and TEXT_LARGE unless
+   * smallModelSpec/largeModelSpec are also provided.
    */
   modelSpec?: string;
-  /** Register handler priority (higher wins over plugin providers). Default: 1000. */
+  /** Optional: model spec to use for TEXT_SMALL. */
+  smallModelSpec?: string;
+  /** Optional: model spec to use for TEXT_LARGE. */
+  largeModelSpec?: string;
+  /** Register handler priority (higher wins over plugin providers). Default: 10000. */
   priority?: number;
 };
 
@@ -39,12 +46,15 @@ export async function registerPiAiRuntime(
 ): Promise<{ modelSpec: string; provider: string; id: string }> {
   const piCreds = await createPiCredentialProvider();
 
-  const modelSpec =
-    opts.modelSpec ??
+  const defaultSpec =
     (await piCreds.getDefaultModelSpec()) ??
     "anthropic/claude-sonnet-4-20250514";
 
-  const { provider, id } = parseModelSpec(modelSpec);
+  const largeSpec = opts.largeModelSpec ?? opts.modelSpec ?? defaultSpec;
+  const smallSpec = opts.smallModelSpec ?? opts.modelSpec ?? largeSpec;
+
+  const { provider: largeProvider, id: largeId } = parseModelSpec(largeSpec);
+  const { provider: smallProvider, id: smallId } = parseModelSpec(smallSpec);
 
   // pi-ai's getModel is typed with provider literals; we support dynamic provider
   // strings (from config), so cast to a looser signature.
@@ -53,16 +63,26 @@ export async function registerPiAiRuntime(
     modelId: string,
   ) => Model<Api>;
 
-  const largeModel = getModelUnsafe(provider, id);
-  const smallModel = largeModel;
+  const largeModel = getModelUnsafe(largeProvider, largeId);
+  const smallModel = getModelUnsafe(smallProvider, smallId);
+
+  const aliases = Array.from(new Set([largeSpec, smallSpec]));
 
   registerPiAiModelHandler(runtime, {
     largeModel,
     smallModel,
     providerName: "pi-ai",
-    priority: opts.priority ?? 1000,
+    // Also register under full model specs so callers that treat MODEL_PROVIDER
+    // as a modelSpec (provider/model) still route here.
+    providerAliases: aliases,
+    priority: opts.priority ?? 10000,
     getApiKey: (p) => piCreds.getApiKey(p),
+    // The UI/API-server path typically does not request streaming, but we still
+    // want to use the streaming API internally for parity with the TUI and
+    // to avoid provider-specific non-streaming edge cases.
+    forceStreaming: true,
   });
 
-  return { modelSpec, provider, id };
+  // Return the selected large model as the primary reference.
+  return { modelSpec: largeSpec, provider: largeProvider, id: largeId };
 }

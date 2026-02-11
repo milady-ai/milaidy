@@ -8,9 +8,7 @@ import {
 } from "@elizaos/core";
 import {
   type Api,
-  type AssistantMessage,
   type Context,
-  complete,
   getProviders,
   type Model,
   stream,
@@ -44,6 +42,23 @@ export interface PiAiConfig {
   getApiKey?: (
     provider: string,
   ) => Promise<string | undefined> | string | undefined;
+  /**
+   * Whether to return an ElizaOS TextStreamResult object when params.stream === true.
+   *
+   * Some ElizaOS internals set stream=true but still expect a plain string.
+   * To avoid breaking those flows, Milaidy defaults this to false and always
+   * returns a string while still streaming via callbacks.
+   */
+  returnTextStreamResult?: boolean;
+  /**
+   * Force using pi-ai's streaming API internally (stream()) even when ElizaOS
+   * did not explicitly request streaming.
+   *
+   * This improves compatibility with providers where non-streaming helpers may
+   * yield empty or non-standard message shapes, which then breaks ElizaOS XML
+   * parsing / retry loops.
+   */
+  forceStreaming?: boolean;
   /** Provider label in ElizaOS model registry */
   providerName?: string;
   /** Additional provider aliases to register under (so runtime.useModel(provider=...) still routes here). */
@@ -72,16 +87,6 @@ function elizaParamsToPiAiContext(params: GenerateTextParams): Context {
       },
     ],
   };
-}
-
-function assistantMessageToText(message: AssistantMessage): string {
-  const parts: string[] = [];
-  for (const block of message.content) {
-    if (block.type === "text") {
-      parts.push(block.text);
-    }
-  }
-  return parts.join("");
 }
 
 function usageToEliza(usage: {
@@ -117,6 +122,8 @@ function createPiAiHandler(
     getApiKey?: (
       provider: string,
     ) => Promise<string | undefined> | string | undefined;
+    returnTextStreamResult?: boolean;
+    forceStreaming?: boolean;
   },
 ) {
   return async (
@@ -130,22 +137,16 @@ function createPiAiHandler(
     const signal = extractAbortSignal(params, config.getAbortSignal);
     const apiKey = await config.getApiKey?.(model.provider);
 
-    const streamRequested =
-      Boolean(p.stream) || typeof p.onStreamChunk === "function";
+    const wantsTextStreamResult =
+      Boolean(p.stream) && config.returnTextStreamResult === true;
+    const streamRequested = typeof p.onStreamChunk === "function";
     const hasTuiListener = typeof config.onStreamEvent === "function";
-    const shouldStream = streamRequested || hasTuiListener;
+    const shouldStream =
+      config.forceStreaming === true ||
+      wantsTextStreamResult ||
+      streamRequested ||
+      hasTuiListener;
 
-    if (!shouldStream) {
-      const result = await complete(model, context, {
-        temperature: p.temperature,
-        maxTokens: p.maxTokens,
-        signal,
-        ...(apiKey ? { apiKey } : {}),
-      });
-      return assistantMessageToText(result);
-    }
-
-    // Streaming path.
     const makeStream = () =>
       stream(model, context, {
         temperature: p.temperature,
@@ -154,8 +155,37 @@ function createPiAiHandler(
         ...(apiKey ? { apiKey } : {}),
       });
 
-    // If Eliza explicitly requested stream=true, return TextStreamResult.
-    if (p.stream) {
+    // Even when ElizaOS doesn't request streaming, we still prefer pi-ai's
+    // streaming API and just aggregate the text deltas. This matches the TUI
+    // behavior and avoids provider-specific differences in non-stream helpers.
+    if (!shouldStream) {
+      let fullText = "";
+
+      try {
+        for await (const event of makeStream()) {
+          switch (event.type) {
+            case "text_delta":
+              fullText += event.delta;
+              break;
+            case "error": {
+              if (event.reason === "aborted") return fullText;
+              throw new Error(event.error.errorMessage ?? "Model stream error");
+            }
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `pi-ai stream() failed (provider=${model.provider}, model=${model.id}, apiKey=${apiKey ? "set" : "missing"}): ${msg}`,
+        );
+      }
+
+      return fullText;
+    }
+
+    // Streaming path.
+    // If explicitly requested and enabled, return TextStreamResult.
+    if (p.stream && config.returnTextStreamResult) {
       let fullText = "";
       let resolvedUsage: TokenUsage | undefined;
       let finishReason: string | undefined;
@@ -249,46 +279,63 @@ function createPiAiHandler(
     // Stream for TUI or onStreamChunk, but return a string for Eliza.
     let fullText = "";
 
-    for await (const event of makeStream()) {
-      switch (event.type) {
-        case "text_delta": {
-          const delta = event.delta;
-          fullText += delta;
-          if (p.onStreamChunk) {
-            await p.onStreamChunk(delta);
+    try {
+      for await (const event of makeStream()) {
+        switch (event.type) {
+          case "text_delta": {
+            const delta = event.delta;
+            fullText += delta;
+            if (p.onStreamChunk) {
+              await p.onStreamChunk(delta);
+            }
+            config.onStreamEvent?.({ type: "token", text: delta });
+            break;
           }
-          config.onStreamEvent?.({ type: "token", text: delta });
-          break;
-        }
-        case "thinking_delta": {
-          config.onStreamEvent?.({ type: "thinking", text: event.delta });
-          break;
-        }
-        case "done": {
-          config.onStreamEvent?.({
-            type: "usage",
-            usage: {
-              inputTokens: event.message.usage.input,
-              outputTokens: event.message.usage.output,
-              totalTokens: event.message.usage.totalTokens,
-            },
-          });
-          config.onStreamEvent?.({ type: "done" });
-          break;
-        }
-        case "error": {
-          if (event.reason === "aborted") {
-            config.onStreamEvent?.({ type: "done", reason: event.reason });
-          } else {
+          case "thinking_delta": {
+            config.onStreamEvent?.({ type: "thinking", text: event.delta });
+            break;
+          }
+          case "done": {
+            config.onStreamEvent?.({
+              type: "usage",
+              usage: {
+                inputTokens: event.message.usage.input,
+                outputTokens: event.message.usage.output,
+                totalTokens: event.message.usage.totalTokens,
+              },
+            });
+            config.onStreamEvent?.({ type: "done" });
+            break;
+          }
+          case "error": {
+            const errText = event.error.errorMessage ?? "Model stream error";
+
+            if (event.reason === "aborted") {
+              config.onStreamEvent?.({ type: "done", reason: event.reason });
+              break;
+            }
+
             config.onStreamEvent?.({
               type: "error",
-              error: event.error.errorMessage ?? "Model stream error",
+              error: errText,
               reason: event.reason,
             });
+
+            // If no one is listening for stream events, surface the error.
+            // This is especially important when forceStreaming=true (API/server path).
+            if (!p.onStreamChunk && !config.onStreamEvent) {
+              throw new Error(errText);
+            }
+
+            break;
           }
-          break;
         }
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `pi-ai stream() failed (provider=${model.provider}, model=${model.id}, apiKey=${apiKey ? "set" : "missing"}): ${msg}`,
+      );
     }
 
     return fullText;
@@ -314,11 +361,15 @@ export function registerPiAiModelHandler(
     onStreamEvent: config.onStreamEvent,
     getAbortSignal: config.getAbortSignal,
     getApiKey: config.getApiKey,
+    returnTextStreamResult: config.returnTextStreamResult,
+    forceStreaming: config.forceStreaming,
   });
   const smallHandler = createPiAiHandler(() => smallModel, {
     onStreamEvent: config.onStreamEvent,
     getAbortSignal: config.getAbortSignal,
     getApiKey: config.getApiKey,
+    returnTextStreamResult: config.returnTextStreamResult,
+    forceStreaming: config.forceStreaming,
   });
 
   const aliases = new Set<string>([
@@ -332,6 +383,20 @@ export function registerPiAiModelHandler(
   for (const alias of aliases) {
     runtime.registerModel(ModelType.TEXT_LARGE, largeHandler, alias, priority);
     runtime.registerModel(ModelType.TEXT_SMALL, smallHandler, alias, priority);
+
+    // Also cover reasoning model types used by some prompt pipelines.
+    runtime.registerModel(
+      ModelType.TEXT_REASONING_LARGE,
+      largeHandler,
+      alias,
+      priority,
+    );
+    runtime.registerModel(
+      ModelType.TEXT_REASONING_SMALL,
+      smallHandler,
+      alias,
+      priority,
+    );
   }
 
   return {
