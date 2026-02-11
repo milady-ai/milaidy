@@ -713,6 +713,7 @@ const BLOCKED_ENV_KEYS = new Set([
   "HOME",
   "SHELL",
   "MILAIDY_API_TOKEN",
+  "MILAIDY_WALLET_EXPORT_TOKEN",
   "DATABASE_URL",
   "POSTGRES_URL",
 ]);
@@ -2816,7 +2817,7 @@ function applyCors(
     );
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Milaidy-Token, X-Api-Key",
+      "Content-Type, Authorization, X-Milaidy-Token, X-Api-Key, X-Milaidy-Export-Token",
     );
   }
 
@@ -2944,6 +2945,60 @@ function isAuthorized(req: http.IncomingMessage): boolean {
   const provided = extractAuthToken(req);
   if (!provided) return false;
   return tokenMatches(expected, provided);
+}
+
+interface WalletExportRequestBody {
+  confirm?: boolean;
+  exportToken?: string;
+}
+
+export interface WalletExportRejection {
+  status: 401 | 403;
+  reason: string;
+}
+
+export function resolveWalletExportRejection(
+  req: http.IncomingMessage,
+  body: WalletExportRequestBody,
+): WalletExportRejection | null {
+  if (!body.confirm) {
+    return {
+      status: 403,
+      reason:
+        'Export requires explicit confirmation. Send { "confirm": true } in the request body.',
+    };
+  }
+
+  const expected = process.env.MILAIDY_WALLET_EXPORT_TOKEN?.trim();
+  if (!expected) {
+    return {
+      status: 403,
+      reason:
+        "Wallet export is disabled. Set MILAIDY_WALLET_EXPORT_TOKEN to enable secure exports.",
+    };
+  }
+
+  const headerToken =
+    typeof req.headers["x-milaidy-export-token"] === "string"
+      ? req.headers["x-milaidy-export-token"].trim()
+      : "";
+  const bodyToken =
+    typeof body.exportToken === "string" ? body.exportToken.trim() : "";
+  const provided = headerToken || bodyToken;
+
+  if (!provided) {
+    return {
+      status: 401,
+      reason:
+        "Missing export token. Provide X-Milaidy-Export-Token header or exportToken in request body.",
+    };
+  }
+
+  if (!tokenMatches(expected, provided)) {
+    return { status: 401, reason: "Invalid export token." };
+  }
+
+  return null;
 }
 
 function extractWsQueryToken(url: URL): string | null {
@@ -7199,18 +7254,14 @@ async function handleRequest(
   }
 
   // ── POST /api/wallet/export ────────────────────────────────────────────
-  // SECURITY: Requires { confirm: true } in the request body to prevent
-  // accidental exposure of private keys.
+  // SECURITY: Requires explicit confirmation + a dedicated export token.
   if (method === "POST" && pathname === "/api/wallet/export") {
-    const body = await readJsonBody<{ confirm?: boolean }>(req, res);
+    const body = await readJsonBody<WalletExportRequestBody>(req, res);
     if (!body) return;
 
-    if (!body.confirm) {
-      error(
-        res,
-        'Export requires explicit confirmation. Send { "confirm": true } in the request body.',
-        403,
-      );
+    const rejection = resolveWalletExportRejection(req, body);
+    if (rejection) {
+      error(res, rejection.reason, rejection.status);
       return;
     }
 
@@ -7691,6 +7742,27 @@ async function handleRequest(
     for (const key of Object.keys(body)) {
       if (ALLOWED_TOP_KEYS.has(key) && !isBlockedObjectKey(key)) {
         filtered[key] = body[key];
+      }
+    }
+
+    // Security: keep auth/step-up secrets out of API-driven config writes so
+    // secret rotation remains an out-of-band operation.
+    if (
+      filtered.env &&
+      typeof filtered.env === "object" &&
+      !Array.isArray(filtered.env)
+    ) {
+      const envPatch = filtered.env as Record<string, unknown>;
+      delete envPatch.MILAIDY_API_TOKEN;
+      delete envPatch.MILAIDY_WALLET_EXPORT_TOKEN;
+      if (
+        envPatch.vars &&
+        typeof envPatch.vars === "object" &&
+        !Array.isArray(envPatch.vars)
+      ) {
+        delete (envPatch.vars as Record<string, unknown>).MILAIDY_API_TOKEN;
+        delete (envPatch.vars as Record<string, unknown>)
+          .MILAIDY_WALLET_EXPORT_TOKEN;
       }
     }
 

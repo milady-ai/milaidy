@@ -2196,7 +2196,12 @@ export class MilaidyClient {
   async getWalletNfts(): Promise<WalletNftsResponse> { return this.fetch("/api/wallet/nfts"); }
   async getWalletConfig(): Promise<WalletConfigStatus> { return this.fetch("/api/wallet/config"); }
   async updateWalletConfig(config: Record<string, string>): Promise<{ ok: boolean }> { return this.fetch("/api/wallet/config", { method: "PUT", body: JSON.stringify(config) }); }
-  async exportWalletKeys(): Promise<WalletExportResult> { return this.fetch("/api/wallet/export", { method: "POST", body: JSON.stringify({ confirm: true }) }); }
+  async exportWalletKeys(exportToken: string): Promise<WalletExportResult> {
+    return this.fetch("/api/wallet/export", {
+      method: "POST",
+      body: JSON.stringify({ confirm: true, exportToken }),
+    });
+  }
 
   // Software Updates
   async getUpdateStatus(force = false): Promise<UpdateStatus> {

@@ -1965,8 +1965,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       "This will reveal your private keys.\n\nNEVER share your private keys with anyone.\nAnyone with your private keys can steal all funds in your wallets.\n\nContinue?",
     );
     if (!confirmed) return;
+    const exportToken = window.prompt(
+      "Enter your wallet export token (MILAIDY_WALLET_EXPORT_TOKEN):",
+      "",
+    );
+    if (exportToken === null) return;
+    if (!exportToken.trim()) {
+      setWalletError("Wallet export token is required.");
+      return;
+    }
     try {
-      const data = await client.exportWalletKeys();
+      const data = await client.exportWalletKeys(exportToken.trim());
       setWalletExportData(data);
       setWalletExportVisible(true);
       setTimeout(() => {
