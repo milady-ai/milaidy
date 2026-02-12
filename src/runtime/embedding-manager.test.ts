@@ -38,6 +38,10 @@ const mockGetLlama = vi.fn().mockResolvedValue({
 
 vi.mock("node-llama-cpp", () => ({
   getLlama: mockGetLlama,
+  LlamaLogLevel: {
+    error: "error",
+    fatal: "fatal",
+  },
 }));
 
 // Mock the model download (don't actually fetch from HuggingFace)

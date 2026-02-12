@@ -5,7 +5,7 @@
  * without actually running update commands.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock child_process and fs before importing the module
 vi.mock("node:child_process", () => ({
@@ -258,11 +258,22 @@ describe("buildUpdateCommand", () => {
 // ============================================================================
 
 describe("performUpdate", () => {
+  let stderrWriteSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.mocked(execSync).mockReset();
     vi.mocked(spawn).mockReset();
     vi.mocked(fs.realpathSync).mockReset();
     vi.mocked(fs.readFileSync).mockReset();
+    // performUpdate streams child stderr to process.stderr; silence that stream
+    // in tests so mocked failure-path output does not pollute test logs.
+    stderrWriteSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stderrWriteSpy.mockRestore();
   });
 
   function createMockChild(exitCode: number, stderrOutput = ""): ChildProcess {

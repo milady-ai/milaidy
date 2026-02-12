@@ -173,6 +173,7 @@ interface ServerState {
   config: MilaidyConfig;
   agentState:
     | "not_started"
+    | "starting"
     | "running"
     | "paused"
     | "stopped"

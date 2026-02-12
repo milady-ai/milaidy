@@ -391,7 +391,7 @@ export class MilaidyEmbeddingManager {
     );
 
     // Import node-llama-cpp lazily
-    const { getLlama } = await import("node-llama-cpp");
+    const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
 
     log.info(
       `[milaidy] Initializing embedding model: ${this.model} ` +
@@ -402,7 +402,7 @@ export class MilaidyEmbeddingManager {
       // Keep startup output quiet by default (npx milaidy should not print
       // tokenizer/model warnings unless they are actual errors).
       this.llama = await getLlama({
-        logLevel: "error",
+        logLevel: LlamaLogLevel.error,
         logger: (level, message) => {
           if (level === "error" || level === "fatal") {
             const text = message.trim();

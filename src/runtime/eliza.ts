@@ -1626,7 +1626,7 @@ export interface StartElizaOptions {
 export interface BootElizaRuntimeOptions {
   /**
    * When true, require an existing ~/.milaidy/milaidy.json config file.
-   * This is used by non-CLI UIs (like the pi-tui interface) where interactive
+   * This is used by non-CLI UIs (like the @elizaos/tui interface) where interactive
    * onboarding prompts would break the alternate screen.
    */
   requireConfig?: boolean;
