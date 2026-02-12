@@ -32,7 +32,7 @@
   },
   "scripts": {
     "benchmark:server": "node --import tsx src/benchmark/server.ts",
-    "build": "tsdown && scripts/rt.sh scripts/write-build-info.ts && cd apps/app && ../../scripts/rt.sh run build",
+    "build": "tsdown && cp src/plugins/telegram-enhanced/package.json dist/plugins/telegram-enhanced/package.json && scripts/rt.sh scripts/write-build-info.ts && cd apps/app && ../../scripts/rt.sh run build",
     "build:node": "tsdown && node --import tsx scripts/write-build-info.ts && cd apps/app && npm run build",
     "build:android": "cd apps/app && ../../scripts/rt.sh run build:android",
     "build:desktop": "cd apps/app && ../../scripts/rt.sh run build:electron",
@@ -136,7 +136,6 @@
     "@elizaos/plugin-social-alpha": "^2.0.0-alpha.4",
     "@elizaos/plugin-sql": "^1.7.2",
     "@elizaos/plugin-telegram": "next",
-    "@milaidy/plugin-telegram-enhanced": "file:./dist/plugins/telegram-enhanced",
     "@elizaos/plugin-todo": "next",
     "@elizaos/plugin-trajectory-logger": "2.0.0-alpha.5",
     "@elizaos/plugin-trust": "next",
