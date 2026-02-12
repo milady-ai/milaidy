@@ -25,14 +25,6 @@ try {
   // dotenv may not be available — keys must be in process.env already
 }
 
-// Also load the user's explicit API keys if not already set
-if (!process.env.ALCHEMY_API_KEY)
-  process.env.ALCHEMY_API_KEY = "b_Ou4aeoKR4tGaTPVp36T";
-if (!process.env.HELIUS_API_KEY)
-  process.env.HELIUS_API_KEY = "67ea9085-1406-4db8-8872-38ac77950d7a";
-if (!process.env.BIRDEYE_API_KEY)
-  process.env.BIRDEYE_API_KEY = "229f561f74844baebc96ce72aca959db";
-
 // Normalize key names: .env uses SOLANA_API_KEY, wallet expects SOLANA_PRIVATE_KEY
 if (!process.env.SOLANA_PRIVATE_KEY && process.env.SOLANA_API_KEY) {
   process.env.SOLANA_PRIVATE_KEY = process.env.SOLANA_API_KEY;
