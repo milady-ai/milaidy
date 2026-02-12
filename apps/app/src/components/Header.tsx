@@ -18,9 +18,7 @@ export function Header() {
     state === "paused" || state === "restarting" || state === "starting" ? "text-warn border-warn" :
     state === "error" ? "text-danger border-danger" : "text-muted border-muted";
   const restartBusy = lifecycleBusy && lifecycleAction === "restart";
-  const pauseResumeBusy =
-    lifecycleBusy &&
-    (lifecycleAction === "pause" || lifecycleAction === "resume");
+  const pauseResumeBusy = lifecycleBusy;
   const pauseResumeDisabled =
     lifecycleBusy || state === "restarting" || state === "starting";
 

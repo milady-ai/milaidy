@@ -209,4 +209,47 @@ describe("lifecycle action locking", () => {
       tree!.unmount();
     });
   });
+
+  it("releases the lock after a failed start so a retry can run", async () => {
+    mockClient.startAgent
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({
+        state: "running",
+        agentName: "Milaidy",
+        model: undefined,
+        startedAt: undefined,
+        uptime: undefined,
+      });
+
+    let api: { handleStart: () => Promise<void> } | null = null;
+    let tree: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      tree = TestRenderer.create(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(Probe, {
+            onReady: (nextApi) => {
+              api = nextApi;
+            },
+          }),
+        ),
+      );
+    });
+
+    expect(api).not.toBeNull();
+
+    await act(async () => {
+      await api!.handleStart();
+    });
+    await act(async () => {
+      await api!.handleStart();
+    });
+
+    expect(mockClient.startAgent).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
 });

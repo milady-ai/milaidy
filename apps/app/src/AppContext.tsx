@@ -985,6 +985,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const cloudLoginPollTimer = useRef<number | null>(null);
   const prevAgentStateRef = useRef<string | null>(null);
   const lifecycleBusyRef = useRef(false);
+  const lifecycleActionRef = useRef<LifecycleAction | null>(null);
   /** Guards against double-greeting when both init and state-transition paths fire. */
   const greetingFiredRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -1457,7 +1458,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const beginLifecycleAction = useCallback((action: LifecycleAction): boolean => {
     if (lifecycleBusyRef.current) {
-      const activeAction = lifecycleAction ?? action;
+      const activeAction =
+        lifecycleActionRef.current ?? lifecycleAction ?? action;
       setActionNotice(
         `Agent action already in progress (${LIFECYCLE_MESSAGES[activeAction].inProgress}). Please wait.`,
         "info",
@@ -1466,6 +1468,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false;
     }
     lifecycleBusyRef.current = true;
+    lifecycleActionRef.current = action;
     setLifecycleBusy(true);
     setLifecycleAction(action);
     return true;
@@ -1473,6 +1476,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const finishLifecycleAction = useCallback(() => {
     lifecycleBusyRef.current = false;
+    lifecycleActionRef.current = null;
     setLifecycleBusy(false);
     setLifecycleAction(null);
   }, []);
@@ -1585,7 +1589,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const handleReset = useCallback(async () => {
     if (lifecycleBusyRef.current) {
-      const activeAction = lifecycleAction ?? "reset";
+      const activeAction =
+        lifecycleActionRef.current ?? lifecycleAction ?? "reset";
       setActionNotice(
         `Agent action already in progress (${LIFECYCLE_MESSAGES[activeAction].inProgress}). Please wait.`,
         "info",
