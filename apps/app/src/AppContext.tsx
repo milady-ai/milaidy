@@ -1688,113 +1688,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (chatSendBusyRef.current || chatSending) return;
     chatSendBusyRef.current = true;
 
-    let convId: string = activeConversationId ?? "";
-    if (!convId) {
-      try {
-        const { conversation } = await client.createConversation();
-        setConversations((prev) => [conversation, ...prev]);
-        setActiveConversationId(conversation.id);
-        activeConversationIdRef.current = conversation.id;
-        convId = conversation.id;
-      } catch {
-        chatSendBusyRef.current = false;
-        return;
-      }
-    }
-
-    // Keep server-side active conversation in sync for proactive routing.
-    client.sendWsMessage({ type: "active-conversation", conversationId: convId });
-
-    const now = Date.now();
-    const userMsgId = `temp-${now}`;
-    const assistantMsgId = `temp-resp-${now}`;
-
-    setConversationMessages((prev: ConversationMessage[]) => [
-      ...prev,
-      { id: userMsgId, role: "user", text, timestamp: now },
-      { id: assistantMsgId, role: "assistant", text: "", timestamp: now },
-    ]);
-    setChatInput("");
-    setChatSending(true);
-    setChatFirstTokenReceived(false);
-
-    const controller = new AbortController();
-    chatAbortRef.current = controller;
-
     try {
-      const data = await client.sendConversationMessageStream(
-        convId,
-        text,
-        (token) => {
-          setChatFirstTokenReceived(true);
-          setConversationMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantMsgId
-                ? { ...message, text: `${message.text}${token}` }
-                : message,
-            ),
-          );
-        },
-        mode,
-        controller.signal,
-      );
-
-      setConversationMessages((prev) =>
-        prev.map((message) =>
-          message.id === assistantMsgId
-            ? { ...message, text: data.text }
-            : message,
-        ),
-      );
-      await loadConversations();
-    } catch (err) {
-      const abortError = err as Error;
-      if (abortError.name === "AbortError") {
-        setConversationMessages((prev) =>
-          prev.filter((message) => !(message.id === assistantMsgId && !message.text.trim())),
-        );
-        return;
-      }
-
-      // If the conversation was lost (server restart), create a fresh one and retry once.
-      const status = (err as { status?: number }).status;
-      if (status === 404) {
+      let convId: string = activeConversationId ?? "";
+      if (!convId) {
         try {
           const { conversation } = await client.createConversation();
           setConversations((prev) => [conversation, ...prev]);
           setActiveConversationId(conversation.id);
           activeConversationIdRef.current = conversation.id;
-          client.sendWsMessage({ type: "active-conversation", conversationId: conversation.id });
-
-          const retryData = await client.sendConversationMessage(
-            conversation.id,
-            text,
-            mode,
-          );
-          setConversationMessages([
-            { id: `temp-${Date.now()}`, role: "user", text, timestamp: Date.now() },
-            {
-              id: `temp-resp-${Date.now()}`,
-              role: "assistant",
-              text: retryData.text,
-              timestamp: Date.now(),
-            },
-          ]);
+          convId = conversation.id;
         } catch {
+          return;
+        }
+      }
+
+      // Keep server-side active conversation in sync for proactive routing.
+      client.sendWsMessage({ type: "active-conversation", conversationId: convId });
+
+      const now = Date.now();
+      const userMsgId = `temp-${now}`;
+      const assistantMsgId = `temp-resp-${now}`;
+
+      setConversationMessages((prev: ConversationMessage[]) => [
+        ...prev,
+        { id: userMsgId, role: "user", text, timestamp: now },
+        { id: assistantMsgId, role: "assistant", text: "", timestamp: now },
+      ]);
+      setChatInput("");
+      setChatSending(true);
+      setChatFirstTokenReceived(false);
+
+      const controller = new AbortController();
+      chatAbortRef.current = controller;
+
+      try {
+        const data = await client.sendConversationMessageStream(
+          convId,
+          text,
+          (token) => {
+            setChatFirstTokenReceived(true);
+            setConversationMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMsgId
+                  ? { ...message, text: `${message.text}${token}` }
+                  : message,
+              ),
+            );
+          },
+          mode,
+          controller.signal,
+        );
+
+        setConversationMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantMsgId
+              ? { ...message, text: data.text }
+              : message,
+          ),
+        );
+        await loadConversations();
+      } catch (err) {
+        const abortError = err as Error;
+        if (abortError.name === "AbortError") {
           setConversationMessages((prev) =>
             prev.filter((message) => !(message.id === assistantMsgId && !message.text.trim())),
           );
+          return;
         }
-      } else {
-        await loadConversationMessages(convId);
+
+        // If the conversation was lost (server restart), create a fresh one and retry once.
+        const status = (err as { status?: number }).status;
+        if (status === 404) {
+          try {
+            const { conversation } = await client.createConversation();
+            setConversations((prev) => [conversation, ...prev]);
+            setActiveConversationId(conversation.id);
+            activeConversationIdRef.current = conversation.id;
+            client.sendWsMessage({ type: "active-conversation", conversationId: conversation.id });
+
+            const retryData = await client.sendConversationMessage(
+              conversation.id,
+              text,
+              mode,
+            );
+            setConversationMessages([
+              { id: `temp-${Date.now()}`, role: "user", text, timestamp: Date.now() },
+              {
+                id: `temp-resp-${Date.now()}`,
+                role: "assistant",
+                text: retryData.text,
+                timestamp: Date.now(),
+              },
+            ]);
+          } catch {
+            setConversationMessages((prev) =>
+              prev.filter((message) => !(message.id === assistantMsgId && !message.text.trim())),
+            );
+          }
+        } else {
+          await loadConversationMessages(convId);
+        }
+      } finally {
+        if (chatAbortRef.current === controller) {
+          chatAbortRef.current = null;
+        }
+        setChatSending(false);
+        setChatFirstTokenReceived(false);
       }
     } finally {
-      if (chatAbortRef.current === controller) {
-        chatAbortRef.current = null;
-      }
       chatSendBusyRef.current = false;
-      setChatSending(false);
-      setChatFirstTokenReceived(false);
     }
   }, [chatInput, chatSending, activeConversationId, loadConversationMessages, loadConversations]);
 

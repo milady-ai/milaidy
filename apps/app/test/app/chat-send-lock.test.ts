@@ -236,4 +236,49 @@ describe("chat send locking", () => {
       tree!.unmount();
     });
   });
+
+  it("releases lock when active-conversation sync throws before stream send", async () => {
+    let api: ProbeApi | null = null;
+    let tree: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      tree = TestRenderer.create(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(Probe, {
+            onReady: (nextApi) => {
+              api = nextApi;
+            },
+          }),
+        ),
+      );
+    });
+
+    expect(api).not.toBeNull();
+
+    await act(async () => {
+      await api!.handleSelectConversation("conv-1");
+      api!.setChatInput("hello");
+    });
+
+    mockClient.sendWsMessage.mockImplementationOnce(() => {
+      throw new Error("ws boom");
+    });
+
+    await act(async () => {
+      await expect(api!.handleChatSend()).rejects.toThrow("ws boom");
+    });
+
+    await act(async () => {
+      api!.setChatInput("hello again");
+      await api!.handleChatSend();
+    });
+
+    expect(mockClient.sendConversationMessageStream).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
 });
