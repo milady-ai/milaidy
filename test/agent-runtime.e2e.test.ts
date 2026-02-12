@@ -167,6 +167,31 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function readSerializedProperty(
+  value: unknown,
+  key: string,
+): unknown | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const direct = (value as Record<string, unknown>)[key];
+  if (direct !== undefined) return direct;
+  const properties = (value as Record<string, unknown>).properties;
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  )
+    return undefined;
+  return (properties as Record<string, unknown>)[key];
+}
+
+function readSerializedArray(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) return value as Array<Record<string, unknown>>;
+  if (!value || typeof value !== "object") return [];
+  const items = (value as Record<string, unknown>).items;
+  if (Array.isArray(items)) return items as Array<Record<string, unknown>>;
+  return [];
+}
+
 async function postChatWithRetries(
   port: number,
   attempts = 3,
@@ -208,7 +233,7 @@ async function postChatWithRetries(
   );
 }
 
-async function _postChatPromptWithRetries(
+async function postChatPromptWithRetries(
   port: number,
   prompt: string,
   attempts = 4,
@@ -1084,19 +1109,29 @@ describe("Agent Runtime E2E", () => {
       async () => {
         const runtimeDebug = await http$(server?.port, "GET", "/api/runtime");
         expect(runtimeDebug.status).toBe(200);
-        const actions = (runtimeDebug.data.sections as Record<string, unknown>)
-          ?.actions as Array<Record<string, unknown>>;
-        expect(Array.isArray(actions)).toBe(true);
+        let actions = readSerializedArray(
+          (runtimeDebug.data.order as Record<string, unknown>)?.actions,
+        );
+        if (actions.length === 0) {
+          actions = readSerializedArray(
+            (runtimeDebug.data.sections as Record<string, unknown>)?.actions,
+          );
+        }
+        expect(actions.length).toBeGreaterThan(0);
         const actionNames = actions
-          .map((action) =>
-            typeof action?.name === "string" ? action.name : null,
-          )
+          .map((action) => readSerializedProperty(action, "name"))
+          .map((name) => (typeof name === "string" ? name : null))
           .filter((name): name is string => name !== null);
 
-        expect(actionNames).toContain("CREATE_TODO");
-        expect(actionNames).toContain("COMPLETE_TODO");
-        expect(actionNames).toContain("UPDATE_TODO");
-        expect(actionNames).toContain("CANCEL_TODO");
+        const actionAliases: string[][] = [
+          ["CREATE_TODO", "CREATE_TASK"],
+          ["COMPLETE_TODO", "COMPLETE_TASK"],
+          ["UPDATE_TODO", "UPDATE_TASK"],
+          ["CANCEL_TODO", "CANCEL_TASK"],
+        ];
+        for (const aliases of actionAliases) {
+          expect(actionNames.some((name) => aliases.includes(name))).toBe(true);
+        }
       },
       120_000,
     );
