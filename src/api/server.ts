@@ -3335,6 +3335,29 @@ export function isSafeResetStateDir(
   return hasAllowedResetSegment(normalizedState);
 }
 
+type ConversationRoomTitleRef = Pick<
+  ConversationMeta,
+  "id" | "title" | "roomId"
+>;
+
+export async function persistConversationRoomTitle(
+  runtime: Pick<AgentRuntime, "getRoom" | "adapter"> | null | undefined,
+  conversation: ConversationRoomTitleRef,
+): Promise<boolean> {
+  if (!runtime) return false;
+  const room = await runtime.getRoom(conversation.roomId);
+  if (!room) return false;
+  if (room.name === conversation.title) return false;
+
+  const adapter = runtime.adapter as {
+    updateRoom?: (nextRoom: typeof room) => Promise<void>;
+  };
+  if (typeof adapter.updateRoom !== "function") return false;
+
+  await adapter.updateRoom({ ...room, name: conversation.title });
+  return true;
+}
+
 function rejectWebSocketUpgrade(
   socket: import("node:stream").Duplex,
   statusCode: number,
@@ -8719,6 +8742,18 @@ async function handleRequest(
     await ensureWorldOwnershipAndRoles(runtime, worldId as UUID, userId);
   };
 
+  const syncConversationRoomTitle = async (
+    conv: ConversationMeta,
+  ): Promise<void> => {
+    try {
+      await persistConversationRoomTitle(state.runtime, conv);
+    } catch (err) {
+      logger.debug(
+        `[conversations] Failed to persist room title for ${conv.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
   const ensureLegacyChatConnection = async (
     runtime: AgentRuntime,
     agentName: string,
@@ -8800,6 +8835,7 @@ async function handleRequest(
     state.conversations.set(id, conv);
     if (state.runtime) {
       await ensureConversationRoom(conv);
+      await syncConversationRoomTitle(conv);
     }
     json(res, { conversation: conv });
     return;
@@ -9173,6 +9209,7 @@ async function handleRequest(
     if (body.title?.trim()) {
       conv.title = body.title.trim();
       conv.updatedAt = new Date().toISOString();
+      await syncConversationRoomTitle(conv);
     }
     json(res, { conversation: conv });
     return;
