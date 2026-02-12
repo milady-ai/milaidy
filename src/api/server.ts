@@ -74,6 +74,11 @@ import {
   taskToTriggerSummary,
 } from "../triggers/runtime.js";
 import { type CloudRouteState, handleCloudRoute } from "./cloud-routes.js";
+import {
+  extractAnthropicSystemAndLastUser,
+  extractOpenAiSystemAndLastUser,
+  resolveCompatRoomKey,
+} from "./compat-utils.js";
 import { handleDatabaseRoute } from "./database.js";
 import { DropService } from "./drop-service.js";
 import { handleKnowledgeRoutes } from "./knowledge-routes.js";
@@ -1766,6 +1771,7 @@ function serveStaticUi(
 
   // Keep API and WebSocket namespaces exclusively owned by server handlers.
   if (pathname === "/api" || pathname.startsWith("/api/")) return false;
+  if (pathname === "/v1" || pathname.startsWith("/v1/")) return false;
   if (pathname === "/ws") return false;
 
   let decodedPath: string;
@@ -1970,6 +1976,24 @@ function writeSse(
 ): void {
   if (res.writableEnded || res.destroyed) return;
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function writeSseData(
+  res: http.ServerResponse,
+  data: string,
+  event?: string,
+): void {
+  if (res.writableEnded || res.destroyed) return;
+  if (event) res.write(`event: ${event}\n`);
+  res.write(`data: ${data}\n\n`);
+}
+
+function writeSseJson(
+  res: http.ServerResponse,
+  payload: unknown,
+  event?: string,
+): void {
+  writeSseData(res, JSON.stringify(payload), event);
 }
 
 async function generateChatResponse(
@@ -8808,6 +8832,629 @@ async function handleRequest(
       await state.chatConnectionPromise;
     }
   };
+
+  const ensureCompatChatConnection = async (
+    runtime: AgentRuntime,
+    agentName: string,
+    channelIdPrefix: string,
+    roomKey: string,
+  ): Promise<{ userId: UUID; roomId: UUID; worldId: UUID }> => {
+    const userId = ensureAdminEntityId();
+    const roomId = stringToUuid(
+      `${agentName}-${channelIdPrefix}-room-${roomKey}`,
+    ) as UUID;
+    const worldId = stringToUuid(`${agentName}-web-chat-world`) as UUID;
+    const messageServerId = stringToUuid(`${agentName}-web-server`) as UUID;
+
+    await runtime.ensureConnection({
+      entityId: userId,
+      roomId,
+      worldId,
+      userName: "User",
+      source: "client_chat",
+      channelId: `${channelIdPrefix}-${roomKey}`,
+      type: ChannelType.DM,
+      messageServerId,
+      metadata: { ownership: { ownerId: userId } },
+    });
+    await ensureWorldOwnershipAndRoles(runtime, worldId, userId);
+
+    return { userId, roomId, worldId };
+  };
+
+  // -------------------------------------------------------------------------
+  // OpenAI / Anthropic compatibility endpoints
+  // -------------------------------------------------------------------------
+
+  // ── GET /v1/models (OpenAI compatible) ─────────────────────────────────
+  if (method === "GET" && pathname === "/v1/models") {
+    const created = Math.floor(Date.now() / 1000);
+    const ids = new Set<string>();
+    ids.add("milaidy");
+    if (state.agentName?.trim()) ids.add(state.agentName.trim());
+    if (state.runtime?.character.name?.trim())
+      ids.add(state.runtime.character.name.trim());
+
+    json(res, {
+      object: "list",
+      data: Array.from(ids).map((id) => ({
+        id,
+        object: "model",
+        created,
+        owned_by: "milaidy",
+      })),
+    });
+    return;
+  }
+
+  // ── GET /v1/models/:id (OpenAI compatible) ─────────────────────────────
+  if (method === "GET" && /^\/v1\/models\/[^/]+$/.test(pathname)) {
+    const created = Math.floor(Date.now() / 1000);
+    const raw = pathname.split("/")[3] ?? "";
+    const decoded = decodePathComponent(raw, res, "model id");
+    if (!decoded) return;
+    const id = decoded.trim();
+    if (!id) {
+      json(
+        res,
+        {
+          error: {
+            message: "Model id is required",
+            type: "invalid_request_error",
+          },
+        },
+        400,
+      );
+      return;
+    }
+    json(res, { id, object: "model", created, owned_by: "milaidy" });
+    return;
+  }
+
+  // ── POST /v1/chat/completions (OpenAI compatible) ──────────────────────
+  if (method === "POST" && pathname === "/v1/chat/completions") {
+    const body = await readJsonBody<Record<string, unknown>>(req, res);
+    if (!body) return;
+    if (hasBlockedObjectKeyDeep(body)) {
+      json(
+        res,
+        {
+          error: {
+            message: "Request body contains a blocked object key",
+            type: "invalid_request_error",
+          },
+        },
+        400,
+      );
+      return;
+    }
+    const safeBody = cloneWithoutBlockedObjectKeys(body);
+
+    const extracted = extractOpenAiSystemAndLastUser(safeBody.messages);
+    if (!extracted) {
+      json(
+        res,
+        {
+          error: {
+            message:
+              "messages must be an array containing at least one user message",
+            type: "invalid_request_error",
+          },
+        },
+        400,
+      );
+      return;
+    }
+
+    const roomKey = resolveCompatRoomKey(safeBody).slice(0, 120);
+    const wantsStream =
+      safeBody.stream === true ||
+      (req.headers.accept ?? "").includes("text/event-stream");
+    const requestedModel =
+      typeof safeBody.model === "string" && safeBody.model.trim()
+        ? safeBody.model.trim()
+        : null;
+
+    const mode: ChatMode = "power";
+    const prompt = extracted.system
+      ? `${extracted.system}\n\n${extracted.user}`.trim()
+      : extracted.user;
+
+    const proxy = state.cloudManager?.getProxy();
+    const created = Math.floor(Date.now() / 1000);
+    const id = `chatcmpl-${crypto.randomUUID()}`;
+    const model =
+      requestedModel ?? proxy?.agentName ?? state.agentName ?? "milaidy";
+
+    if (wantsStream) {
+      initSse(res);
+      let aborted = false;
+      req.on("close", () => {
+        aborted = true;
+      });
+
+      const sendChunk = (
+        delta: Record<string, unknown>,
+        finishReason: string | null,
+      ) => {
+        writeSseData(
+          res,
+          JSON.stringify({
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta,
+                finish_reason: finishReason,
+              },
+            ],
+          }),
+        );
+      };
+
+      try {
+        if (!proxy && !state.runtime) {
+          writeSseData(
+            res,
+            JSON.stringify({
+              error: {
+                message: "Agent is not running",
+                type: "service_unavailable",
+              },
+            }),
+          );
+          writeSseData(res, "[DONE]");
+          return;
+        }
+
+        sendChunk({ role: "assistant" }, null);
+
+        let fullText = "";
+
+        if (proxy) {
+          for await (const chunk of proxy.handleChatMessageStream(
+            prompt,
+            "openai-compat",
+            mode,
+          )) {
+            if (aborted) throw new Error("client_disconnected");
+            fullText += chunk;
+            if (chunk) sendChunk({ content: chunk }, null);
+          }
+        } else {
+          const runtime = state.runtime;
+          if (!runtime) throw new Error("Agent is not running");
+          const agentName = runtime.character.name ?? "Milaidy";
+          const { userId, roomId } = await ensureCompatChatConnection(
+            runtime,
+            agentName,
+            "openai-compat",
+            roomKey,
+          );
+
+          const message = createMessageMemory({
+            id: crypto.randomUUID() as UUID,
+            entityId: userId,
+            roomId,
+            content: {
+              text: prompt,
+              mode,
+              simple: false,
+              source: "compat_openai",
+              channelType: ChannelType.DM,
+            },
+          });
+
+          await generateChatResponse(runtime, message, state.agentName, {
+            isAborted: () => aborted,
+            onChunk: (chunk) => {
+              fullText += chunk;
+              if (chunk) sendChunk({ content: chunk }, null);
+            },
+            resolveNoResponseText: () =>
+              resolveNoResponseFallback(state.logBuffer),
+          });
+        }
+
+        const resolved = normalizeChatResponseText(fullText, state.logBuffer);
+        if (
+          (fullText.trim().length === 0 || isNoResponsePlaceholder(fullText)) &&
+          resolved.trim()
+        ) {
+          // Ensure clients receive a non-empty completion even if the model returned "(no response)".
+          sendChunk({ content: resolved }, null);
+        }
+
+        sendChunk({}, "stop");
+        writeSseData(res, "[DONE]");
+      } catch (err) {
+        if (!aborted) {
+          writeSseData(
+            res,
+            JSON.stringify({
+              error: {
+                message: getErrorMessage(err),
+                type: "server_error",
+              },
+            }),
+          );
+          writeSseData(res, "[DONE]");
+        }
+      } finally {
+        res.end();
+      }
+      return;
+    }
+
+    // Non-streaming
+    try {
+      let responseText: string;
+
+      if (proxy) {
+        responseText = await proxy.handleChatMessage(
+          prompt,
+          "openai-compat",
+          mode,
+        );
+      } else {
+        if (!state.runtime) {
+          json(
+            res,
+            {
+              error: {
+                message: "Agent is not running",
+                type: "service_unavailable",
+              },
+            },
+            503,
+          );
+          return;
+        }
+        const runtime = state.runtime;
+        const agentName = runtime.character.name ?? "Milaidy";
+        const { userId, roomId } = await ensureCompatChatConnection(
+          runtime,
+          agentName,
+          "openai-compat",
+          roomKey,
+        );
+        const message = createMessageMemory({
+          id: crypto.randomUUID() as UUID,
+          entityId: userId,
+          roomId,
+          content: {
+            text: prompt,
+            mode,
+            simple: false,
+            source: "compat_openai",
+            channelType: ChannelType.DM,
+          },
+        });
+        const result = await generateChatResponse(
+          runtime,
+          message,
+          state.agentName,
+          {
+            resolveNoResponseText: () =>
+              resolveNoResponseFallback(state.logBuffer),
+          },
+        );
+        responseText = result.text;
+      }
+
+      const resolvedText = normalizeChatResponseText(
+        responseText,
+        state.logBuffer,
+      );
+      json(res, {
+        id,
+        object: "chat.completion",
+        created,
+        model,
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: resolvedText },
+            finish_reason: "stop",
+          },
+        ],
+      });
+    } catch (err) {
+      json(
+        res,
+        { error: { message: getErrorMessage(err), type: "server_error" } },
+        500,
+      );
+    }
+    return;
+  }
+
+  // ── POST /v1/messages (Anthropic compatible) ───────────────────────────
+  if (method === "POST" && pathname === "/v1/messages") {
+    const body = await readJsonBody<Record<string, unknown>>(req, res);
+    if (!body) return;
+    if (hasBlockedObjectKeyDeep(body)) {
+      json(
+        res,
+        {
+          error: {
+            type: "invalid_request_error",
+            message: "Request body contains a blocked object key",
+          },
+        },
+        400,
+      );
+      return;
+    }
+    const safeBody = cloneWithoutBlockedObjectKeys(body);
+
+    const extracted = extractAnthropicSystemAndLastUser({
+      system: safeBody.system,
+      messages: safeBody.messages,
+    });
+    if (!extracted) {
+      json(
+        res,
+        {
+          error: {
+            type: "invalid_request_error",
+            message:
+              "messages must be an array containing at least one user message",
+          },
+        },
+        400,
+      );
+      return;
+    }
+
+    const roomKey = resolveCompatRoomKey(safeBody).slice(0, 120);
+    const wantsStream =
+      safeBody.stream === true ||
+      (req.headers.accept ?? "").includes("text/event-stream");
+    const requestedModel =
+      typeof safeBody.model === "string" && safeBody.model.trim()
+        ? safeBody.model.trim()
+        : null;
+
+    const mode: ChatMode = "power";
+    const prompt = extracted.system
+      ? `${extracted.system}\n\n${extracted.user}`.trim()
+      : extracted.user;
+
+    const proxy = state.cloudManager?.getProxy();
+    const id = `msg_${crypto.randomUUID().replace(/-/g, "")}`;
+    const model =
+      requestedModel ?? proxy?.agentName ?? state.agentName ?? "milaidy";
+
+    if (wantsStream) {
+      initSse(res);
+      let aborted = false;
+      req.on("close", () => {
+        aborted = true;
+      });
+
+      try {
+        if (!proxy && !state.runtime) {
+          writeSseJson(
+            res,
+            {
+              type: "error",
+              error: {
+                type: "service_unavailable",
+                message: "Agent is not running",
+              },
+            },
+            "error",
+          );
+          return;
+        }
+
+        writeSseJson(
+          res,
+          {
+            type: "message_start",
+            message: {
+              id,
+              type: "message",
+              role: "assistant",
+              model,
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: { input_tokens: 0, output_tokens: 0 },
+            },
+          },
+          "message_start",
+        );
+        writeSseJson(
+          res,
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          "content_block_start",
+        );
+
+        let fullText = "";
+
+        const onDelta = (chunk: string) => {
+          if (!chunk) return;
+          fullText += chunk;
+          writeSseJson(
+            res,
+            {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: chunk },
+            },
+            "content_block_delta",
+          );
+        };
+
+        if (proxy) {
+          for await (const chunk of proxy.handleChatMessageStream(
+            prompt,
+            "anthropic-compat",
+            mode,
+          )) {
+            if (aborted) throw new Error("client_disconnected");
+            onDelta(chunk);
+          }
+        } else {
+          const runtime = state.runtime;
+          if (!runtime) throw new Error("Agent is not running");
+          const agentName = runtime.character.name ?? "Milaidy";
+          const { userId, roomId } = await ensureCompatChatConnection(
+            runtime,
+            agentName,
+            "anthropic-compat",
+            roomKey,
+          );
+
+          const message = createMessageMemory({
+            id: crypto.randomUUID() as UUID,
+            entityId: userId,
+            roomId,
+            content: {
+              text: prompt,
+              mode,
+              simple: false,
+              source: "compat_anthropic",
+              channelType: ChannelType.DM,
+            },
+          });
+
+          await generateChatResponse(runtime, message, state.agentName, {
+            isAborted: () => aborted,
+            onChunk: onDelta,
+            resolveNoResponseText: () =>
+              resolveNoResponseFallback(state.logBuffer),
+          });
+        }
+
+        const resolved = normalizeChatResponseText(fullText, state.logBuffer);
+        if (
+          (fullText.trim().length === 0 || isNoResponsePlaceholder(fullText)) &&
+          resolved.trim()
+        ) {
+          onDelta(resolved);
+        }
+
+        writeSseJson(
+          res,
+          { type: "content_block_stop", index: 0 },
+          "content_block_stop",
+        );
+        writeSseJson(
+          res,
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null },
+            usage: { output_tokens: 0 },
+          },
+          "message_delta",
+        );
+        writeSseJson(res, { type: "message_stop" }, "message_stop");
+      } catch (err) {
+        if (!aborted) {
+          writeSseJson(
+            res,
+            {
+              type: "error",
+              error: { type: "server_error", message: getErrorMessage(err) },
+            },
+            "error",
+          );
+        }
+      } finally {
+        res.end();
+      }
+      return;
+    }
+
+    // Non-streaming
+    try {
+      let responseText: string;
+
+      if (proxy) {
+        responseText = await proxy.handleChatMessage(
+          prompt,
+          "anthropic-compat",
+          mode,
+        );
+      } else {
+        if (!state.runtime) {
+          json(
+            res,
+            {
+              error: {
+                type: "service_unavailable",
+                message: "Agent is not running",
+              },
+            },
+            503,
+          );
+          return;
+        }
+        const runtime = state.runtime;
+        const agentName = runtime.character.name ?? "Milaidy";
+        const { userId, roomId } = await ensureCompatChatConnection(
+          runtime,
+          agentName,
+          "anthropic-compat",
+          roomKey,
+        );
+        const message = createMessageMemory({
+          id: crypto.randomUUID() as UUID,
+          entityId: userId,
+          roomId,
+          content: {
+            text: prompt,
+            mode,
+            simple: false,
+            source: "compat_anthropic",
+            channelType: ChannelType.DM,
+          },
+        });
+        const result = await generateChatResponse(
+          runtime,
+          message,
+          state.agentName,
+          {
+            resolveNoResponseText: () =>
+              resolveNoResponseFallback(state.logBuffer),
+          },
+        );
+        responseText = result.text;
+      }
+
+      const resolvedText = normalizeChatResponseText(
+        responseText,
+        state.logBuffer,
+      );
+      json(res, {
+        id,
+        type: "message",
+        role: "assistant",
+        model,
+        content: [{ type: "text", text: resolvedText }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      });
+    } catch (err) {
+      json(
+        res,
+        { error: { type: "server_error", message: getErrorMessage(err) } },
+        500,
+      );
+    }
+    return;
+  }
 
   // ── GET /api/conversations ──────────────────────────────────────────
   if (method === "GET" && pathname === "/api/conversations") {
