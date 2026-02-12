@@ -1500,6 +1500,19 @@ export class MilaidyClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = 500;
 
+  private static resolveElectronLocalFallbackBase(): string {
+    if (typeof window === "undefined") return "";
+    const proto = window.location.protocol;
+    if (proto === "capacitor-electron:") {
+      return "http://127.0.0.1:2138";
+    }
+    // Legacy Electron file:// mode fallback.
+    if (proto === "file:" && /\bElectron\b/i.test(window.navigator.userAgent)) {
+      return "http://127.0.0.1:2138";
+    }
+    return "";
+  }
+
   constructor(baseUrl?: string, token?: string) {
     this._explicitBase = baseUrl != null;
     const stored =
@@ -1510,7 +1523,9 @@ export class MilaidyClient {
     // Priority: explicit arg > Capacitor/Electron injected global > same origin (Vite proxy)
     const injectedBase =
       typeof window !== "undefined" ? window.__MILAIDY_API_BASE__ : undefined;
-    this._baseUrl = baseUrl ?? (injectedBase ?? "");
+    this._baseUrl =
+      baseUrl ??
+      (injectedBase ?? MilaidyClient.resolveElectronLocalFallbackBase());
   }
 
   /**
@@ -1524,6 +1539,8 @@ export class MilaidyClient {
       const injected = window.__MILAIDY_API_BASE__;
       if (injected) {
         this._baseUrl = injected;
+      } else {
+        this._baseUrl = MilaidyClient.resolveElectronLocalFallbackBase();
       }
     }
     return this._baseUrl;
