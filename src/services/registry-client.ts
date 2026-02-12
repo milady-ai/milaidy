@@ -419,7 +419,7 @@ async function discoverLocalWorkspaceApps(): Promise<
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || !entry.name.startsWith("app-")) continue;
+      if ((!entry.isDirectory() && !entry.isSymbolicLink()) || !entry.name.startsWith("app-")) continue;
       const packageDir = path.join(pluginsDir, entry.name);
       const packageJson = await readJsonFile<LocalPackageJson>(
         path.join(packageDir, "package.json"),

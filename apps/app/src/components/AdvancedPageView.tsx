@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useApp } from "../AppContext";
 import { PluginsPageView } from "./PluginsPageView";
 import { SkillsView } from "./SkillsView";
+import { CustomActionsView } from "./CustomActionsView";
 import { FineTuningView } from "./FineTuningView";
 import { TrajectoriesView } from "./TrajectoriesView";
 import { TrajectoryDetailView } from "./TrajectoryDetailView";
@@ -26,6 +27,7 @@ import type { Tab } from "../navigation";
 type SubTab =
   | "plugins"
   | "skills"
+  | "actions"
   | "fine-tuning"
   | "trajectories"
   | "runtime"
@@ -35,6 +37,7 @@ type SubTab =
 const SUB_TABS: Array<{ id: SubTab; label: string; description: string }> = [
   { id: "plugins", label: "Plugins", description: "Features and connectors" },
   { id: "skills", label: "Skills", description: "Custom agent skills" },
+  { id: "actions", label: "Actions", description: "Custom agent actions" },
   { id: "fine-tuning", label: "Fine-Tuning", description: "Dataset and model training workflows" },
   { id: "trajectories", label: "Trajectories", description: "LLM call history and analysis" },
   { id: "runtime", label: "Runtime", description: "Deep runtime object introspection and load order" },
@@ -46,6 +49,7 @@ function mapTabToSubTab(tab: Tab): SubTab {
   switch (tab) {
     case "plugins": return "plugins";
     case "skills": return "skills";
+    case "actions": return "actions";
     case "fine-tuning": return "fine-tuning";
     case "trajectories": return "trajectories";
     case "runtime": return "runtime";
@@ -69,6 +73,9 @@ export function AdvancedPageView() {
         break;
       case "skills":
         setTab("skills");
+        break;
+      case "actions":
+        setTab("actions");
         break;
       case "fine-tuning":
         setTab("fine-tuning");
@@ -96,6 +103,8 @@ export function AdvancedPageView() {
         return <PluginsPageView />;
       case "skills":
         return <SkillsView />;
+      case "actions":
+        return <CustomActionsView />;
       case "fine-tuning":
         return <FineTuningView />;
       case "trajectories":

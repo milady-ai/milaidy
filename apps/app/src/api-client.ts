@@ -79,6 +79,24 @@ export interface QueryResult {
   durationMs: number;
 }
 
+// Custom actions types
+export type CustomActionHandler =
+  | { type: "http"; method: string; url: string; headers?: Record<string, string>; bodyTemplate?: string }
+  | { type: "shell"; command: string }
+  | { type: "code"; code: string };
+
+export interface CustomActionDef {
+  id: string;
+  name: string;
+  description: string;
+  similes?: string[];
+  parameters: Array<{ name: string; description: string; required: boolean }>;
+  handler: CustomActionHandler;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type AgentState = "not_started" | "running" | "paused" | "stopped" | "restarting" | "error";
 
 export interface AgentStatus {
@@ -395,6 +413,10 @@ export interface PluginInfo {
   npmName?: string;
   version?: string;
   pluginDeps?: string[];
+  /** Whether this plugin is actually loaded and running in the runtime. */
+  isActive?: boolean;
+  /** Error message when plugin is installed but failed to load. */
+  loadError?: string;
   /** Server-provided UI hints for plugin configuration fields. */
   configUiHints?: Record<string, ConfigUiHint>;
   /** Optional icon URL or emoji for the plugin card header. */
@@ -1601,6 +1623,13 @@ export class MilaidyClient {
     });
   }
 
+  async runTerminalCommand(command: string): Promise<{ ok: boolean }> {
+    return this.fetch("/api/terminal/run", {
+      method: "POST",
+      body: JSON.stringify({ command }),
+    });
+  }
+
   async getOnboardingStatus(): Promise<{ complete: boolean }> {
     return this.fetch("/api/onboarding/status");
   }
@@ -1697,6 +1726,33 @@ export class MilaidyClient {
   async restartAgent(): Promise<AgentStatus> {
     const res = await this.fetch<{ status: AgentStatus }>("/api/agent/restart", { method: "POST" });
     return res.status;
+  }
+
+  /**
+   * Restart the agent if possible, or wait for an in-progress restart to finish.
+   * Polls status until the agent state is "running".
+   */
+  async restartAndWait(maxWaitMs = 30000): Promise<AgentStatus> {
+    // Try triggering a restart; 409 means one is already in progress
+    try {
+      await this.restartAgent();
+    } catch {
+      // Already restarting — that's fine, we'll poll
+    }
+    // Poll until running
+    const start = Date.now();
+    const interval = 1000;
+    while (Date.now() - start < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, interval));
+      try {
+        const status = await this.getStatus();
+        if (status.state === "running") return status;
+      } catch {
+        // Server may be briefly unavailable during restart
+      }
+    }
+    // Return whatever we get after timeout
+    return this.getStatus();
   }
 
   async resetAgent(): Promise<void> {
@@ -3169,6 +3225,59 @@ export class MilaidyClient {
     return this.fetch("/api/whitelist/twitter/verify", {
       method: "POST",
       body: JSON.stringify({ tweetUrl }),
+    });
+  }
+
+  // ── Custom Actions ─────────────────────────────────────────────────────
+
+  async listCustomActions(): Promise<CustomActionDef[]> {
+    const data = await this.fetch<{ actions: CustomActionDef[] }>("/api/custom-actions");
+    return data.actions;
+  }
+
+  async createCustomAction(
+    action: Omit<CustomActionDef, "id" | "createdAt" | "updatedAt">,
+  ): Promise<CustomActionDef> {
+    const data = await this.fetch<{ ok: boolean; action: CustomActionDef }>(
+      "/api/custom-actions",
+      { method: "POST", body: JSON.stringify(action) },
+    );
+    return data.action;
+  }
+
+  async updateCustomAction(
+    id: string,
+    action: Partial<CustomActionDef>,
+  ): Promise<CustomActionDef> {
+    const data = await this.fetch<{ ok: boolean; action: CustomActionDef }>(
+      `/api/custom-actions/${encodeURIComponent(id)}`,
+      { method: "PUT", body: JSON.stringify(action) },
+    );
+    return data.action;
+  }
+
+  async deleteCustomAction(id: string): Promise<void> {
+    await this.fetch(`/api/custom-actions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async testCustomAction(
+    id: string,
+    params: Record<string, string>,
+  ): Promise<{ ok: boolean; output: string; error?: string; durationMs: number }> {
+    return this.fetch(
+      `/api/custom-actions/${encodeURIComponent(id)}/test`,
+      { method: "POST", body: JSON.stringify({ params }) },
+    );
+  }
+
+  async generateCustomAction(
+    prompt: string,
+  ): Promise<{ ok: boolean; generated: Record<string, unknown> }> {
+    return this.fetch("/api/custom-actions/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
     });
   }
 }

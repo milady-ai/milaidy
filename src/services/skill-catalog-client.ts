@@ -8,6 +8,7 @@
  */
 
 import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { logger } from "@elizaos/core";
 
@@ -84,7 +85,7 @@ function findCatalogPaths(): string[] {
 
   // Walk up from this file to find the package root (contains package.json)
   let dir =
-    import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+    import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 5; i++) {
     paths.push(path.join(dir, "skills", ".cache", "catalog.json"));
     const parent = path.dirname(dir);

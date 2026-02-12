@@ -30,7 +30,7 @@ interface ProviderOption {
 
 const IMAGE_PROVIDERS: ProviderOption[] = [
   { id: "cloud", label: "Eliza Cloud", hint: "No setup needed" },
-  { id: "fal", label: "FAL.ai", hint: "Flux, SD3" },
+  { id: "fal", label: "FAL.ai", hint: "Flux 2, Kling, Recraft, Grok" },
   { id: "openai", label: "OpenAI", hint: "DALL-E 3" },
   { id: "google", label: "Google", hint: "Imagen 3" },
   { id: "xai", label: "xAI", hint: "Aurora" },
@@ -38,7 +38,7 @@ const IMAGE_PROVIDERS: ProviderOption[] = [
 
 const VIDEO_PROVIDERS: ProviderOption[] = [
   { id: "cloud", label: "Eliza Cloud", hint: "No setup needed" },
-  { id: "fal", label: "FAL.ai", hint: "Minimax, Runway" },
+  { id: "fal", label: "FAL.ai", hint: "Veo 3, Sora 2, Kling 3, Minimax" },
   { id: "openai", label: "OpenAI", hint: "Sora" },
   { id: "google", label: "Google", hint: "Veo" },
 ];
@@ -398,10 +398,23 @@ export function MediaSettingsSection() {
                 value={(getNestedValue(mediaConfig as Record<string, unknown>, "image.fal.model") as string) ?? "fal-ai/flux-pro"}
                 onChange={(e) => updateNestedValue("image.fal.model", e.target.value)}
               >
-                <option value="fal-ai/flux-pro">Flux Pro</option>
-                <option value="fal-ai/flux-dev">Flux Dev</option>
-                <option value="fal-ai/flux-schnell">Flux Schnell</option>
-                <option value="fal-ai/stable-diffusion-3">Stable Diffusion 3</option>
+                <optgroup label="Flux">
+                  <option value="fal-ai/flux-pro">Flux Pro</option>
+                  <option value="fal-ai/flux-pro/v1.1">Flux Pro v1.1</option>
+                  <option value="fal-ai/flux-pro/kontext">Flux Kontext Pro</option>
+                  <option value="fal-ai/flux-2-flex">Flux 2 Flex</option>
+                  <option value="fal-ai/flux/dev">Flux Dev</option>
+                  <option value="fal-ai/flux/schnell">Flux Schnell</option>
+                  <option value="fal-ai/fast-flux">Fast Flux</option>
+                </optgroup>
+                <optgroup label="Other Models">
+                  <option value="fal-ai/nano-banana-pro">Nano Banana Pro (Google)</option>
+                  <option value="fal-ai/recraft/v3/text-to-image">Recraft V3</option>
+                  <option value="fal-ai/kling-image/v3/text-to-image">Kling Image v3</option>
+                  <option value="fal-ai/kling-image/o3/text-to-image">Kling Image O3</option>
+                  <option value="xai/grok-imagine-image">Grok Imagine (xAI)</option>
+                  <option value="fal-ai/stable-diffusion-3">Stable Diffusion 3</option>
+                </optgroup>
               </select>
             </div>
           )}
@@ -439,12 +452,37 @@ export function MediaSettingsSection() {
               <label className="text-xs font-semibold">Model</label>
               <select
                 className="px-2.5 py-1.5 border border-[var(--border)] bg-[var(--card)] text-xs focus:border-[var(--accent)] focus:outline-none"
-                value={(getNestedValue(mediaConfig as Record<string, unknown>, "video.fal.model") as string) ?? "fal-ai/minimax-video"}
+                value={(getNestedValue(mediaConfig as Record<string, unknown>, "video.fal.model") as string) ?? "fal-ai/kling-video/v3/pro/text-to-video"}
                 onChange={(e) => updateNestedValue("video.fal.model", e.target.value)}
               >
-                <option value="fal-ai/minimax-video">Minimax Video</option>
-                <option value="fal-ai/runway-gen3">Runway Gen-3</option>
-                <option value="fal-ai/kling-video">Kling Video</option>
+                <optgroup label="Text to Video">
+                  <option value="fal-ai/veo3.1">Veo 3.1 (Google)</option>
+                  <option value="fal-ai/veo3.1/fast">Veo 3.1 Fast</option>
+                  <option value="fal-ai/sora-2/text-to-video">Sora 2</option>
+                  <option value="fal-ai/sora-2/text-to-video/pro">Sora 2 Pro</option>
+                  <option value="fal-ai/kling-video/v3/pro/text-to-video">Kling 3.0 Pro</option>
+                  <option value="fal-ai/kling-video/v3/standard/text-to-video">Kling 3.0</option>
+                  <option value="fal-ai/kling-video/o3/pro/text-to-video">Kling O3 Pro</option>
+                  <option value="fal-ai/kling-video/o3/standard/text-to-video">Kling O3</option>
+                  <option value="xai/grok-imagine-video/text-to-video">Grok Video (xAI)</option>
+                  <option value="fal-ai/minimax/video-01-live">Minimax Hailuo</option>
+                  <option value="fal-ai/hunyuan-video">Hunyuan Video</option>
+                  <option value="fal-ai/mochi-v1">Mochi 1</option>
+                  <option value="fal-ai/wan/v2.2-a14b/text-to-video">Wan 2.2</option>
+                </optgroup>
+                <optgroup label="Image to Video">
+                  <option value="fal-ai/kling-video/v3/pro/image-to-video">Kling 3.0 Pro</option>
+                  <option value="fal-ai/kling-video/o3/standard/image-to-video">Kling O3</option>
+                  <option value="fal-ai/veo3.1/image-to-video">Veo 3.1</option>
+                  <option value="fal-ai/veo3.1/fast/image-to-video">Veo 3.1 Fast</option>
+                  <option value="fal-ai/sora-2/image-to-video">Sora 2</option>
+                  <option value="fal-ai/sora-2/image-to-video/pro">Sora 2 Pro</option>
+                  <option value="xai/grok-imagine-video/image-to-video">Grok (xAI)</option>
+                  <option value="fal-ai/minimax/video-01-live/image-to-video">Minimax Hailuo</option>
+                  <option value="fal-ai/luma-dream-machine/image-to-video">Luma Dream Machine</option>
+                  <option value="fal-ai/pixverse/v4.5/image-to-video">Pixverse v4.5</option>
+                  <option value="fal-ai/ltx-2-19b/image-to-video">LTX-2 19B</option>
+                </optgroup>
               </select>
             </div>
           )}

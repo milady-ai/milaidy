@@ -40,4 +40,29 @@ describe("electron startup web asset resolution (e2e)", () => {
     expect(result.usedFallback).toBe(true);
     expect(result.directory).toBe(path.resolve(distDir));
   });
+
+  it("uses apps/app/dist in dev preference even when synced app assets exist", () => {
+    const workspaceRoot = createTempDir();
+    const capacitorAppDir = path.join(workspaceRoot, "apps", "app");
+    const electronDir = path.join(capacitorAppDir, "electron");
+    const syncedAppDir = path.join(electronDir, "app");
+    const distDir = path.join(capacitorAppDir, "dist");
+
+    mkdirSync(syncedAppDir, { recursive: true });
+    mkdirSync(distDir, { recursive: true });
+    writeFileSync(path.join(syncedAppDir, "index.html"), "<html><body>stale</body></html>");
+    writeFileSync(path.join(distDir, "index.html"), "<html><body>fresh</body></html>");
+
+    const result = resolveWebAssetDirectory({
+      appPath: electronDir,
+      cwd: electronDir,
+      webDir: "dist",
+      preferBuildOutput: true,
+    });
+
+    expect(result.hasIndexHtml).toBe(true);
+    expect(result.usedFallback).toBe(true);
+    expect(result.primaryHasIndexHtml).toBe(true);
+    expect(result.directory).toBe(path.resolve(distDir));
+  });
 });

@@ -15,7 +15,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { shell } from "electron";
-import type { PermissionCheckResult, SystemPermissionId } from "./permissions-shared.js";
+import type { PermissionCheckResult, SystemPermissionId } from "../permissions/types.js";
 
 const execAsync = promisify(exec);
 

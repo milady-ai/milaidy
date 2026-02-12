@@ -673,6 +673,25 @@ export type UpdateConfig = {
   checkIntervalSeconds?: number;
 };
 
+// --- Custom Actions types ---
+
+export type CustomActionHandler =
+  | { type: "http"; method: string; url: string; headers?: Record<string, string>; bodyTemplate?: string }
+  | { type: "shell"; command: string }
+  | { type: "code"; code: string };
+
+export type CustomActionDef = {
+  id: string;
+  name: string;
+  description: string;
+  similes?: string[];
+  parameters: Array<{ name: string; description: string; required: boolean }>;
+  handler: CustomActionHandler;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // --- Connector types ---
 
 /** JSON-serializable value for connector configuration fields. */
@@ -803,6 +822,8 @@ export type MilaidyConfig = {
     string,
     boolean | { enabled?: boolean; [k: string]: unknown }
   >;
+  /** User-defined custom actions for the agent. */
+  customActions?: CustomActionDef[];
 };
 
 export type ConfigValidationIssue = {

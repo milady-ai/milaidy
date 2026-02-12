@@ -9,6 +9,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   IAgentRuntime,
   Memory,
@@ -29,6 +30,9 @@ import {
 import { emoteAction } from "../actions/emote.js";
 import { mediaActions } from "../actions/media.js";
 import { restartAction } from "../actions/restart.js";
+import { installPluginAction } from "../actions/install-plugin.js";
+import { terminalAction } from "../actions/terminal.js";
+import { loadCustomActions, setCustomActionsRuntime } from "./custom-actions.js";
 import { EMOTE_CATALOG } from "../emotes/catalog.js";
 import { createAdminTrustProvider } from "../providers/admin-trust.js";
 import {
@@ -90,7 +94,7 @@ function readPluginManifest(): Array<{
 }> {
   try {
     const thisDir =
-      import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+      import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
     // Walk up to find the project root (package.json with name "milaidy")
     let dir = thisDir;
     for (let i = 0; i < 10; i++) {
@@ -240,8 +244,14 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
           "### Normal replies",
           "For normal conversational replies, respond with plain text only — do not output JSON or markers.",
           "",
-          "### All available plugins (use the short id for CONFIG markers):",
-          "Plugins marked [active] are currently loaded. Plugins marked [available] can be enabled via CONFIG.",
+          "### Installing plugins",
+          "Plugins marked [available] are NOT installed yet. When a user wants to use an [available] plugin,",
+          "use the INSTALL_PLUGIN action with the plugin's short ID to install it automatically.",
+          "After installation the agent restarts and the plugin becomes [active].",
+          "You can also include [CONFIG:pluginId] in your response to show the configuration form.",
+          "",
+          "### All available plugins (use the short id for CONFIG markers and INSTALL_PLUGIN):",
+          "Plugins marked [active] are currently loaded. Plugins marked [available] need to be installed first via INSTALL_PLUGIN.",
           ...pluginLines,
         ].join("\n"),
       };
@@ -268,6 +278,58 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
           "Use emotes sparingly and naturally during conversation to express yourself.",
           "",
           `Available emote IDs: ${ids}`,
+        ].join("\n"),
+      };
+    },
+  };
+
+  // Custom actions provider — tells the LLM about available custom actions.
+  const customActionsProvider: Provider = {
+    name: "customActions",
+    description: "User-defined custom actions",
+
+    async get(): Promise<ProviderResult> {
+      const customActions = loadCustomActions();
+      if (customActions.length === 0) {
+        return {
+          text: [
+            "## Custom Actions",
+            "",
+            "No custom actions are currently defined.",
+            "Users can create custom actions from the Custom Actions panel in the UI.",
+          ].join("\n"),
+        };
+      }
+
+      const lines = customActions.map((a) => {
+        const params = a.parameters?.map((p) => `${p.name}${(p as { required?: boolean }).required ? " (required)" : ""}`).join(", ") || "none";
+        return `- **${a.name}**: ${a.description} [params: ${params}]`;
+      });
+
+      return {
+        text: [
+          "## Custom Actions",
+          "",
+          "The following custom actions are available:",
+          ...lines,
+        ].join("\n"),
+      };
+    },
+  };
+
+  // Terminal provider — tells the LLM it can run shell commands.
+  const terminalProvider: Provider = {
+    name: "terminal",
+    description: "Embedded terminal for running shell commands",
+
+    async get(): Promise<ProviderResult> {
+      return {
+        text: [
+          "## Terminal",
+          "",
+          "You can run shell commands in the user's embedded terminal using the RUN_IN_TERMINAL action.",
+          "Use this when the user asks you to run a command, execute a script, install packages, etc.",
+          "The terminal auto-opens and shows the command output in real time.",
         ].join("\n"),
       };
     },
@@ -330,6 +392,7 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
     init: async (_pluginConfig, runtime) => {
       registerTriggerTaskWorker(runtime);
       ensureAutonomousStateTracking(runtime);
+      setCustomActionsRuntime(runtime);
     },
 
     providers: [
@@ -338,13 +401,18 @@ export function createMilaidyPlugin(config?: MilaidyPluginConfig): Plugin {
       uiCatalogProvider,
       emoteProvider,
       mediaProvider,
+      terminalProvider,
+      customActionsProvider,
     ],
 
     actions: [
       restartAction,
       createTriggerTaskAction,
       emoteAction,
+      terminalAction,
+      installPluginAction,
       ...mediaActions,
+      ...loadCustomActions(),
     ],
 
     // TrajectoryLoggerService is provided by @elizaos/plugin-trajectory-logger (in CORE_PLUGINS)

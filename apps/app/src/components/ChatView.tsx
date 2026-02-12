@@ -373,6 +373,17 @@ export function ChatView() {
           </button>
         </div>
         <div className="flex gap-1.5">
+          {/* Custom Actions panel toggle */}
+          <button
+            className="w-7 h-7 flex items-center justify-center border rounded cursor-pointer transition-all bg-card border-border text-muted hover:border-accent hover:text-accent"
+            onClick={() => window.dispatchEvent(new Event("toggle-custom-actions-panel"))}
+            title="Custom Actions"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </button>
+
           {/* Show / hide avatar */}
           <button
             className={`w-7 h-7 flex items-center justify-center border rounded cursor-pointer transition-all bg-card ${

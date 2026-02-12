@@ -6,12 +6,14 @@ export interface WebAssetResolution {
   searched: string[];
   usedFallback: boolean;
   hasIndexHtml: boolean;
+  primaryHasIndexHtml: boolean;
 }
 
 interface ResolveWebAssetDirectoryOptions {
   appPath: string;
   cwd?: string;
   webDir?: string;
+  preferBuildOutput?: boolean;
 }
 
 const DEFAULT_WEB_DIR = "dist";
@@ -39,15 +41,29 @@ export function resolveWebAssetDirectory(
   const cwd = options.cwd ?? process.cwd();
   const appRoot = path.resolve(options.appPath);
   const primary = path.join(appRoot, "app");
+  const primaryHasIndex = hasIndexHtml(primary);
 
-  const candidates = dedupePaths([
+  const defaultCandidates = [
     primary,
     path.join(appRoot, webDir),
     path.join(appRoot, "..", webDir),
     path.join(cwd, "app"),
     path.join(cwd, webDir),
     path.join(cwd, "..", webDir),
-  ]);
+  ];
+
+  const preferBuildOutputCandidates = [
+    path.join(appRoot, webDir),
+    path.join(appRoot, "..", webDir),
+    path.join(cwd, webDir),
+    path.join(cwd, "..", webDir),
+    primary,
+    path.join(cwd, "app"),
+  ];
+
+  const candidates = dedupePaths(
+    options.preferBuildOutput ? preferBuildOutputCandidates : defaultCandidates,
+  );
 
   for (const candidate of candidates) {
     if (!hasIndexHtml(candidate)) continue;
@@ -56,6 +72,7 @@ export function resolveWebAssetDirectory(
       searched: candidates,
       usedFallback: candidate !== primary,
       hasIndexHtml: true,
+      primaryHasIndexHtml: primaryHasIndex,
     };
   }
 
@@ -64,6 +81,7 @@ export function resolveWebAssetDirectory(
     searched: candidates,
     usedFallback: false,
     hasIndexHtml: false,
+    primaryHasIndexHtml: primaryHasIndex,
   };
 }
 

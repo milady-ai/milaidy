@@ -52,6 +52,29 @@ describe("resolveWebAssetDirectory", () => {
     expect(result.hasIndexHtml).toBe(true);
   });
 
+  it("prefers build output over synced app assets when configured", () => {
+    const root = createTempDir();
+    const appPath = path.join(root, "electron");
+    const appDir = path.join(appPath, "app");
+    const distDir = path.join(root, "dist");
+    mkdirSync(appDir, { recursive: true });
+    mkdirSync(distDir, { recursive: true });
+    writeFileSync(path.join(appDir, "index.html"), "<html><body>stale</body></html>");
+    writeFileSync(path.join(distDir, "index.html"), "<html><body>fresh</body></html>");
+
+    const result = resolveWebAssetDirectory({
+      appPath,
+      cwd: appPath,
+      webDir: "dist",
+      preferBuildOutput: true,
+    });
+
+    expect(result.directory).toBe(path.resolve(distDir));
+    expect(result.usedFallback).toBe(true);
+    expect(result.hasIndexHtml).toBe(true);
+    expect(result.primaryHasIndexHtml).toBe(true);
+  });
+
   it("reports searched paths when assets are missing", () => {
     const root = createTempDir();
     const appPath = path.join(root, "electron");

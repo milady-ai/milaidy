@@ -658,7 +658,7 @@ const FEATURE_SUBGROUP: Record<string, string> = {
   "s3-storage": "storage", "trajectory-logger": "storage", experience: "storage",
   // Gaming & Creative
   minecraft: "gaming", roblox: "gaming", babylon: "gaming", mysticism: "gaming",
-  personality: "gaming", moltbook: "gaming",
+  personality: "gaming", moltbook: "gaming", ltcg: "gaming",
 };
 
 const SUBGROUP_DISPLAY_ORDER = [
@@ -724,6 +724,8 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
   const [addDirOpen, setAddDirOpen] = useState(false);
   const [addDirPath, setAddDirPath] = useState("");
   const [addDirLoading, setAddDirLoading] = useState(false);
+  const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set());
+  const [installProgress, setInstallProgress] = useState<Map<string, { phase: string; message: string }>>(new Map());
 
   // ── Drag-to-reorder state ────────────────────────────────────────
   const [pluginOrder, setPluginOrder] = useState<string[]>(() => {
@@ -740,6 +742,22 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
   useEffect(() => {
     void loadPlugins();
   }, [loadPlugins]);
+
+  // Listen for install progress events via WebSocket
+  useEffect(() => {
+    const unbind = client.onWsEvent("install-progress", (data: Record<string, unknown>) => {
+      const pluginName = data.pluginName as string;
+      const phase = data.phase as string;
+      const message = data.message as string;
+      if (!pluginName) return;
+      if (phase === "complete" || phase === "error") {
+        setInstallProgress((prev) => { const next = new Map(prev); next.delete(pluginName); return next; });
+      } else {
+        setInstallProgress((prev) => new Map(prev).set(pluginName, { phase, message }));
+      }
+    });
+    return unbind;
+  }, []);
 
   // Persist custom order
   useEffect(() => {
@@ -911,6 +929,32 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
     }
   };
 
+  const handleInstallPlugin = async (pluginId: string, npmName: string) => {
+    setInstallingPlugins((prev) => new Set(prev).add(pluginId));
+    try {
+      await client.installRegistryPlugin(npmName);
+      setActionNotice(`Installed ${npmName}. Restarting agent...`, "success");
+      // Wait for the restart to complete (handles 409 if already restarting)
+      await client.restartAndWait();
+      await loadPlugins();
+      setActionNotice(`${npmName} installed and loaded.`, "success");
+    } catch (err) {
+      setActionNotice(
+        `Failed to install ${npmName}: ${err instanceof Error ? err.message : "unknown error"}`,
+        "error",
+        3800,
+      );
+      // Still try to refresh in case install succeeded but restart failed
+      try { await loadPlugins(); } catch { /* ignore */ }
+    } finally {
+      setInstallingPlugins((prev) => {
+        const next = new Set(prev);
+        next.delete(pluginId);
+        return next;
+      });
+    }
+  };
+
   // ── Add from directory ──────────────────────────────────────────────
 
   const handleAddFromDirectory = async () => {
@@ -1074,13 +1118,25 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
           )}
         </div>
 
-        {/* Badges: category + version */}
+        {/* Badges: category + version + loaded status */}
         <div className="flex items-center gap-1.5 px-3 pb-1.5">
           <span className="text-[10px] px-1.5 py-px border border-border bg-surface text-muted lowercase tracking-wide whitespace-nowrap">
             {categoryLabel}
           </span>
           {p.version && (
             <span className="text-[10px] font-mono text-muted opacity-70">v{p.version}</span>
+          )}
+          {p.enabled && !p.isActive && !isShowcase && (
+            <span
+              className={`text-[10px] px-1.5 py-px border lowercase tracking-wide whitespace-nowrap ${
+                p.loadError
+                  ? "border-destructive bg-[rgba(153,27,27,0.04)] text-destructive"
+                  : "border-warn bg-[rgba(234,179,8,0.06)] text-warn"
+              }`}
+              title={p.loadError || "Plugin is enabled but not loaded in the runtime"}
+            >
+              {p.loadError ? "load failed" : "not installed"}
+            </span>
           )}
         </div>
 
@@ -1111,6 +1167,21 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
             <span className="text-[10px] text-muted opacity-50">23 field demos</span>
           )}
           <div className="flex-1" />
+          {p.enabled && !p.isActive && p.npmName && !isShowcase && !p.loadError && (
+            <button
+              type="button"
+              className="text-[10px] px-2 py-[2px] border border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg cursor-pointer transition-colors max-w-[180px] truncate"
+              disabled={installingPlugins.has(p.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleInstallPlugin(p.id, p.npmName!);
+              }}
+            >
+              {installingPlugins.has(p.id)
+                ? installProgress.get(p.npmName!)?.message || "Installing..."
+                : "Install"}
+            </button>
+          )}
           {hasParams && (
             <button
               type="button"
@@ -1165,7 +1236,7 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
   const settingsDialogPlugin = useMemo(() => {
     for (const id of pluginSettingsOpen) {
       const p = nonDbPlugins.find((pl: PluginInfo) => pl.id === id);
-      if (p && p.parameters && p.parameters.length > 0 && p.category !== "ai-provider") return p;
+      if (p && p.parameters && p.parameters.length > 0) return p;
     }
     return null;
   }, [pluginSettingsOpen, nonDbPlugins]);
@@ -1361,7 +1432,24 @@ function PluginListView({ label, mode = "all" }: PluginListViewProps) {
               {/* Dialog footer — actions (hidden for showcase) */}
               {!isShowcase && (
                 <div className="flex justify-end gap-2.5 px-5 py-3 border-t border-border shrink-0">
-                  {p.enabled && (
+                  {p.enabled && !p.isActive && p.npmName && !p.loadError && (
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 text-[11px] border border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg cursor-pointer rounded-sm transition-colors max-w-[260px] truncate"
+                      disabled={installingPlugins.has(p.id)}
+                      onClick={() => handleInstallPlugin(p.id, p.npmName!)}
+                    >
+                      {installingPlugins.has(p.id)
+                        ? installProgress.get(p.npmName!)?.message || "Installing..."
+                        : "Install Plugin"}
+                    </button>
+                  )}
+                  {p.loadError && (
+                    <span className="px-3 py-1.5 text-[11px] text-destructive" title={p.loadError}>
+                      Package broken — missing compiled files
+                    </span>
+                  )}
+                  {p.isActive && (
                     <button
                       type="button"
                       className={`px-3 py-1.5 text-[11px] border rounded-sm transition-colors ${

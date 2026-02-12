@@ -12,6 +12,7 @@ export type Tab =
   | "triggers"
   | "plugins"
   | "skills"
+  | "actions"
   | "advanced"
   | "fine-tuning"
   | "trajectories"
@@ -36,6 +37,7 @@ export const TAB_GROUPS = [
       "advanced",
       "plugins",
       "skills",
+      "actions",
       "fine-tuning",
       "trajectories",
       "runtime",
@@ -55,6 +57,7 @@ const TAB_PATHS: Record<Tab, string> = {
   connectors: "/connectors",
   plugins: "/plugins",
   skills: "/skills",
+  actions: "/actions",
   advanced: "/advanced",
   "fine-tuning": "/fine-tuning",
   trajectories: "/trajectories",
@@ -129,6 +132,7 @@ export function titleForTab(tab: Tab): string {
     case "connectors": return "Connectors";
     case "plugins": return "Plugins";
     case "skills": return "Skills";
+    case "actions": return "Actions";
     case "advanced": return "Advanced";
     case "fine-tuning": return "Fine-Tuning";
     case "trajectories": return "Trajectories";

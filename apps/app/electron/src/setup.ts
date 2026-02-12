@@ -6,7 +6,7 @@ import {
 } from '@capacitor-community/electron';
 import chokidar from 'chokidar';
 import type { MenuItemConstructorOptions } from 'electron';
-import { app, BrowserWindow, Menu, MenuItem, nativeImage, Tray, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, Menu, MenuItem, nativeImage, Tray, session, shell } from 'electron';
 import electronIsDev from 'electron-is-dev';
 import electronServe from 'electron-serve';
 import windowStateKeeper from 'electron-window-state';
@@ -75,6 +75,7 @@ export class ElectronCapacitorApp {
       appPath: app.getAppPath(),
       cwd: process.cwd(),
       webDir: this.CapacitorFileConfig.webDir,
+      preferBuildOutput: electronIsDev,
     });
     this.webAssetDirectory = webAssets.directory;
 
@@ -87,9 +88,15 @@ export class ElectronCapacitorApp {
     }
 
     if (webAssets.usedFallback) {
-      console.warn(
-        `[Milaidy] Using fallback web assets at ${this.webAssetDirectory} because ${join(app.getAppPath(), 'app')} is missing index.html`
-      );
+      if (webAssets.primaryHasIndexHtml && electronIsDev) {
+        console.info(
+          `[Milaidy] Dev mode: using web assets at ${this.webAssetDirectory} instead of synced ${join(app.getAppPath(), 'app')}`
+        );
+      } else {
+        console.warn(
+          `[Milaidy] Using fallback web assets at ${this.webAssetDirectory} because ${join(app.getAppPath(), 'app')} is missing index.html`
+        );
+      }
     }
 
     if (!webAssets.hasIndexHtml) {
@@ -278,6 +285,93 @@ export class ElectronCapacitorApp {
         }
         CapElectronEventEmitter.emit('CAPELECTRON_DeeplinkListenerInitialized', '');
       }, 400);
+    });
+
+    // ── Context menu ──────────────────────────────────────────────────
+    this.MainWindow.webContents.on('context-menu', (_event, params) => {
+      const menuItems: MenuItemConstructorOptions[] = [];
+
+      // Text selection actions
+      if (params.selectionText) {
+        const text = params.selectionText.trim();
+        menuItems.push(
+          { role: 'copy' },
+          { type: 'separator' },
+          {
+            label: 'Save as /Command',
+            click: () => this.MainWindow.webContents.send('contextMenu:saveAsCommand', { text }),
+          },
+          {
+            label: 'Ask Agent About This',
+            click: () => this.MainWindow.webContents.send('contextMenu:askAgent', { text }),
+          },
+          {
+            label: 'Create Skill from This',
+            click: () => this.MainWindow.webContents.send('contextMenu:createSkill', { text }),
+          },
+          {
+            label: 'Quote in Chat',
+            click: () => this.MainWindow.webContents.send('contextMenu:quoteInChat', { text }),
+          },
+        );
+      }
+
+      // Link actions
+      if (params.linkURL) {
+        if (menuItems.length > 0) menuItems.push({ type: 'separator' });
+        menuItems.push(
+          {
+            label: 'Open Link in Browser',
+            click: () => shell.openExternal(params.linkURL),
+          },
+          {
+            label: 'Copy Link Address',
+            click: () => clipboard.writeText(params.linkURL),
+          },
+        );
+      }
+
+      // Image actions
+      if (params.hasImageContents) {
+        if (menuItems.length > 0) menuItems.push({ type: 'separator' });
+        menuItems.push(
+          {
+            label: 'Copy Image',
+            click: () => this.MainWindow.webContents.copyImageAt(params.x, params.y),
+          },
+          {
+            label: 'Save Image As...',
+            click: () => this.MainWindow.webContents.downloadURL(params.srcURL),
+          },
+        );
+      }
+
+      // Editable field actions
+      if (params.isEditable) {
+        if (menuItems.length > 0) menuItems.push({ type: 'separator' });
+        menuItems.push(
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { type: 'separator' },
+          { role: 'selectAll' },
+        );
+      }
+
+      // Always-present items
+      if (menuItems.length > 0) menuItems.push({ type: 'separator' });
+      menuItems.push({ role: 'reload' });
+      if (electronIsDev) {
+        menuItems.push({
+          label: 'Inspect Element',
+          click: () => this.MainWindow.webContents.inspectElement(params.x, params.y),
+        });
+      }
+
+      Menu.buildFromTemplate(menuItems).popup();
     });
 
     // Handle content load failures — still show the window so it isn't invisible.

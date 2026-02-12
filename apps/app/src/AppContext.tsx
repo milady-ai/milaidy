@@ -1679,14 +1679,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       try {
         await client.updatePlugin(pluginId, { enabled });
+        // Optimistic update for immediate feedback
         setPlugins((prev: PluginInfo[]) =>
           prev.map((p: PluginInfo) => (p.id === pluginId ? { ...p, enabled } : p)),
         );
+        // The server schedules a restart after toggle — wait for it then refresh
+        await client.restartAndWait();
+        await loadPlugins();
       } catch {
         /* ignore */
       }
     },
-    [plugins, setActionNotice],
+    [plugins, loadPlugins, setActionNotice],
   );
 
   const handlePluginConfigSave = useCallback(
@@ -2742,6 +2746,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const nextStatus = parseAgentStatusEvent(data);
         if (nextStatus) {
           setAgentStatus(nextStatus);
+          // Auto-refresh plugins when agent reports a restart
+          if (data.restarted) {
+            void loadPlugins();
+          }
         }
       });
       unbindAgentEvents = client.onWsEvent("agent_event", (data: Record<string, unknown>) => {
