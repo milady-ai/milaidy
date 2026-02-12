@@ -54,7 +54,14 @@ function ViewRouter() {
 }
 
 export function App() {
-  const { onboardingLoading, authRequired, onboardingComplete, tab, actionNotice } = useApp();
+  const {
+    onboardingLoading,
+    startupPhase,
+    authRequired,
+    onboardingComplete,
+    tab,
+    actionNotice,
+  } = useApp();
   const contextMenu = useContextMenu();
 
   const [customActionsPanelOpen, setCustomActionsPanelOpen] = useState(false);
@@ -75,7 +82,7 @@ export function App() {
   }, []);
 
   if (onboardingLoading) {
-    return <LoadingScreen />;
+    return <LoadingScreen phase={startupPhase} />;
   }
 
   if (authRequired) return <PairingView />;

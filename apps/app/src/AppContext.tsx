@@ -325,6 +325,8 @@ type LoadConversationMessagesResult =
   | { ok: true }
   | { ok: false; status?: number; message: string };
 
+export type StartupPhase = "starting-backend" | "initializing-agent";
+
 // ── Context value type ─────────────────────────────────────────────────
 
 export interface AppState {
@@ -335,6 +337,7 @@ export interface AppState {
   agentStatus: AgentStatus | null;
   onboardingComplete: boolean;
   onboardingLoading: boolean;
+  startupPhase: StartupPhase;
   authRequired: boolean;
   actionNotice: ActionNotice | null;
   lifecycleBusy: boolean;
@@ -725,6 +728,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingLoading, setOnboardingLoading] = useState(true);
+  const [startupPhase, setStartupPhase] =
+    useState<StartupPhase>("starting-backend");
   const [authRequired, setAuthRequired] = useState(false);
   const [actionNotice, setActionNoticeState] = useState<ActionNotice | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
@@ -3078,9 +3083,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const MAX_RETRIES = 20;
       const BASE_DELAY_MS = 250;
       const MAX_DELAY_MS = 1000;
+      const AGENT_READY_TIMEOUT_MS = 180_000;
       let serverReady = false;
       let onboardingNeedsOptions = false;
       let requiresAuth = false;
+      setStartupPhase("starting-backend");
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
@@ -3109,10 +3116,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (!serverReady) {
         console.warn("[milaidy] Could not reach server after retries.");
+        setOnboardingLoading(false);
+        return;
       }
-      setOnboardingLoading(false);
 
-      if (requiresAuth) return;
+      if (requiresAuth) {
+        setOnboardingLoading(false);
+        return;
+      }
+
+      setStartupPhase("initializing-agent");
 
       // Fetch onboarding options in the background so we can render quickly.
       if (onboardingNeedsOptions) {
@@ -3125,6 +3138,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         })();
       }
+
+      // Wait for the runtime to be ready before unblocking the UI.
+      let agentReady = false;
+      const waitStartedAt = Date.now();
+      while (Date.now() - waitStartedAt < AGENT_READY_TIMEOUT_MS) {
+        try {
+          let status = await client.getStatus();
+          setAgentStatus(status);
+          setConnected(true);
+
+          if (status.state === "not_started" || status.state === "stopped") {
+            try {
+              status = await client.startAgent();
+              setAgentStatus(status);
+            } catch {
+              /* ignore */
+            }
+          }
+
+          if (status.state === "running" || status.state === "paused") {
+            agentReady = true;
+            break;
+          }
+
+          if (status.state === "error") {
+            break;
+          }
+        } catch {
+          setConnected(false);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      if (!agentReady) {
+        console.warn(
+          "[milaidy] Agent did not reach running state before startup timeout.",
+        );
+      }
+
+      setOnboardingLoading(false);
 
       // Load conversations — if none exist, create one and request a greeting
       let greetConvId: string | null = null;
@@ -3256,30 +3309,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      // Load status
-      try {
-        const status = await client.getStatus();
-        setAgentStatus(status);
-        setConnected(true);
-
-        // Keep runtime available by default when the app opens.
-        const canAutoStartOverHttp =
-          window.location.protocol === "http:" || window.location.protocol === "https:";
-        if (
-          canAutoStartOverHttp &&
-          (status.state === "not_started" || status.state === "stopped")
-        ) {
-          try {
-            const started = await client.startAgent();
-            setAgentStatus(started);
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch {
-        setConnected(false);
-      }
-
       // Load wallet addresses for header
       try {
         setWalletAddresses(await client.getWalletAddresses());
@@ -3377,7 +3406,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value: AppContextValue = {
     // State
     tab, currentTheme, connected, agentStatus, onboardingComplete, onboardingLoading,
-    authRequired, actionNotice, lifecycleBusy, lifecycleAction,
+    startupPhase, authRequired, actionNotice, lifecycleBusy, lifecycleAction,
     pairingEnabled, pairingExpiresAt, pairingCodeInput, pairingError, pairingBusy,
     chatInput, chatSending, chatFirstTokenReceived, conversations, activeConversationId, conversationMessages,
     autonomousEvents, autonomousLatestEventId, unreadConversations,
