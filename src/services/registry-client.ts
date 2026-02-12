@@ -434,8 +434,7 @@ function buildDiscoveredEntry(
   const repo = parseRepositoryMetadata(
     packageJson.repository ?? manifest?.repository,
   );
-  const description =
-    packageJson.description ?? manifest?.description ?? "";
+  const description = packageJson.description ?? manifest?.description ?? "";
   const homepage =
     packageJson.homepage ??
     manifest?.homepage ??
@@ -524,7 +523,7 @@ async function discoverLocalWorkspaceApps(): Promise<
       const installDir = path.join(installedBase, entry.name);
       // Installed plugins nest inside node_modules — find the actual package
       const nmDir = path.join(installDir, "node_modules");
-      let pkgDirs: string[] = [];
+      const pkgDirs: string[] = [];
       try {
         const nmEntries = await fs.readdir(nmDir, { withFileTypes: true });
         for (const nm of nmEntries) {
