@@ -390,6 +390,7 @@ describe("Agent Runtime E2E", () => {
   );
 
   const corePluginNames = [
+    "@elizaos/plugin-trajectory-logger",
     "@elizaos/plugin-agent-skills",
     "@elizaos/plugin-directives",
     "@elizaos/plugin-commands",

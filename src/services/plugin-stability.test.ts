@@ -918,6 +918,13 @@ describe("Version Skew Detection (issue #10)", () => {
     expect(CORE_PLUGINS).toContain("@elizaos/plugin-knowledge");
     expect(OPTIONAL_CORE_PLUGINS).not.toContain("@elizaos/plugin-knowledge");
   });
+
+  it("plugin-trajectory-logger is in CORE_PLUGINS", () => {
+    expect(CORE_PLUGINS).toContain("@elizaos/plugin-trajectory-logger");
+    expect(OPTIONAL_CORE_PLUGINS).not.toContain(
+      "@elizaos/plugin-trajectory-logger",
+    );
+  });
 });
 
 // ============================================================================

@@ -540,6 +540,7 @@ describe("Plugin Stress Test", () => {
   const ALL_CORE_PLUGINS: readonly string[] = [
     "@elizaos/plugin-sql",
     "@elizaos/plugin-local-embedding",
+    "@elizaos/plugin-trajectory-logger",
     "@elizaos/plugin-agent-skills",
     "@elizaos/plugin-agent-orchestrator",
     "@elizaos/plugin-directives",
@@ -1271,6 +1272,7 @@ describe("Runtime Integration (with model provider)", () => {
     });
 
     const corePluginNames = [
+      "@elizaos/plugin-trajectory-logger",
       "@elizaos/plugin-agent-skills",
       "@elizaos/plugin-directives",
       "@elizaos/plugin-commands",
