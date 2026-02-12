@@ -3326,6 +3326,19 @@ interface WorkbenchTodoView {
   type: string;
 }
 
+interface TodoDataServiceLike {
+  createTodo: (input: Record<string, unknown>) => Promise<string>;
+  getTodos: (
+    filters?: Record<string, unknown>,
+  ) => Promise<Array<Record<string, unknown>>>;
+  getTodo: (todoId: string) => Promise<Record<string, unknown> | null>;
+  updateTodo: (
+    todoId: string,
+    updates: Record<string, unknown>,
+  ) => Promise<boolean>;
+  deleteTodo: (todoId: string) => Promise<boolean>;
+}
+
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -3450,6 +3463,48 @@ function normalizeTags(value: unknown, required: string[] = []): string[] {
     ...required.map((tag) => tag.trim()).filter((tag) => tag.length > 0),
   ]);
   return [...next];
+}
+
+async function getTodoDataService(
+  runtime: AgentRuntime,
+): Promise<TodoDataServiceLike | null> {
+  try {
+    const todoModule = (await import("@elizaos/plugin-todo")) as Record<
+      string,
+      unknown
+    >;
+    const createTodoDataService = todoModule.createTodoDataService as
+      | ((rt: AgentRuntime) => TodoDataServiceLike)
+      | undefined;
+    if (!createTodoDataService) return null;
+    return createTodoDataService(runtime);
+  } catch {
+    return null;
+  }
+}
+
+function toWorkbenchTodoFromRecord(
+  todo: Record<string, unknown>,
+): WorkbenchTodoView | null {
+  const id =
+    typeof todo.id === "string" && todo.id.trim().length > 0 ? todo.id : null;
+  const name =
+    typeof todo.name === "string" && todo.name.trim().length > 0
+      ? todo.name
+      : null;
+  if (!id || !name) return null;
+  return {
+    id,
+    name,
+    description: typeof todo.description === "string" ? todo.description : "",
+    priority: parseNullableNumber(todo.priority),
+    isUrgent: todo.isUrgent === true,
+    isCompleted: todo.isCompleted === true,
+    type:
+      typeof todo.type === "string" && todo.type.trim().length > 0
+        ? todo.type
+        : "task",
+  };
 }
 
 // ── Runtime debug serialization ─────────────────────────────────────
@@ -9748,6 +9803,7 @@ async function handleRequest(
     let triggersAvailable = false;
     let todosAvailable = false;
     let runtimeTasks: Task[] = [];
+    let todoData: TodoDataServiceLike | null = null;
 
     if (state.runtime) {
       try {
@@ -9772,6 +9828,24 @@ async function handleRequest(
       }
 
       try {
+        todoData = await getTodoDataService(state.runtime);
+        if (todoData) {
+          const dbTodos = await todoData.getTodos({
+            agentId: state.runtime.agentId,
+          });
+          todosAvailable = true;
+          for (const rawTodo of dbTodos) {
+            const mapped = toWorkbenchTodoFromRecord(rawTodo);
+            if (mapped) {
+              todos.push(mapped);
+            }
+          }
+        }
+      } catch {
+        // plugin todo unavailable or errored; keep fallback todos
+      }
+
+      try {
         const triggerTasks = await listTriggerTasks(state.runtime);
         triggersAvailable = true;
         for (const task of triggerTasks) {
@@ -9791,6 +9865,15 @@ async function handleRequest(
           }
         }
       }
+    }
+
+    if (todos.length > 1) {
+      const dedupedTodos = new Map<string, WorkbenchTodoView>();
+      for (const todo of todos) {
+        dedupedTodos.set(todo.id, todo);
+      }
+      todos.length = 0;
+      todos.push(...dedupedTodos.values());
     }
 
     tasks.sort((a, b) => a.name.localeCompare(b.name));
@@ -9951,6 +10034,30 @@ async function handleRequest(
       .map((task) => toWorkbenchTodo(task))
       .filter((todo): todo is WorkbenchTodoView => todo !== null)
       .sort((a, b) => a.name.localeCompare(b.name));
+    const todoData = await getTodoDataService(state.runtime);
+    if (todoData) {
+      try {
+        const dbTodos = await todoData.getTodos({
+          agentId: state.runtime.agentId,
+        });
+        for (const rawTodo of dbTodos) {
+          const mapped = toWorkbenchTodoFromRecord(rawTodo);
+          if (mapped) {
+            const existingIndex = todos.findIndex(
+              (todo) => todo.id === mapped.id,
+            );
+            if (existingIndex >= 0) {
+              todos[existingIndex] = mapped;
+            } else {
+              todos.push(mapped);
+            }
+          }
+        }
+        todos.sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        // fallback to task-backed todos only
+      }
+    }
     json(res, { todos });
     return;
   }
@@ -9985,6 +10092,52 @@ async function handleRequest(
       typeof body.type === "string" && body.type.trim().length > 0
         ? body.type.trim()
         : "task";
+
+    const todoData = await getTodoDataService(state.runtime);
+    if (todoData) {
+      try {
+        const now = Date.now();
+        const roomId =
+          (
+            state.runtime.getService("AUTONOMY") as {
+              getAutonomousRoomId?: () => UUID;
+            } | null
+          )?.getAutonomousRoomId?.() ??
+          stringToUuid(`workbench-todo-room-${state.runtime.agentId}`);
+        const worldId = stringToUuid(
+          `workbench-todo-world-${state.runtime.agentId}`,
+        );
+        const entityId =
+          state.adminEntityId ?? stringToUuid(`workbench-todo-entity-${now}`);
+        const createdTodoId = await todoData.createTodo({
+          agentId: state.runtime.agentId,
+          worldId,
+          roomId,
+          entityId,
+          name,
+          description: description || name,
+          type,
+          priority: priority ?? undefined,
+          isUrgent,
+          metadata: {
+            createdAt: new Date(now).toISOString(),
+            source: "workbench-api",
+          },
+          tags: normalizeTags(body.tags, ["TODO"]),
+        });
+        const createdDbTodo = await todoData.getTodo(createdTodoId);
+        const mappedDbTodo = createdDbTodo
+          ? toWorkbenchTodoFromRecord(createdDbTodo)
+          : null;
+        if (mappedDbTodo) {
+          json(res, { todo: mappedDbTodo }, 201);
+          return;
+        }
+      } catch {
+        // fallback to task-backed todo creation
+      }
+    }
+
     const metadata = {
       isCompleted,
       workbenchTodo: {
@@ -10025,14 +10178,27 @@ async function handleRequest(
       "todo id",
     );
     if (!decodedTodoId) return;
+    const body = await readJsonBody<{ isCompleted?: boolean }>(req, res);
+    if (!body) return;
+    const isCompleted = body.isCompleted === true;
+    const todoData = await getTodoDataService(state.runtime);
+    if (todoData) {
+      try {
+        await todoData.updateTodo(decodedTodoId, {
+          isCompleted,
+          completedAt: isCompleted ? new Date() : null,
+        });
+        json(res, { ok: true });
+        return;
+      } catch {
+        // fallback to task-backed path
+      }
+    }
     const todoTask = await state.runtime.getTask(decodedTodoId as UUID);
     if (!todoTask || !todoTask.id || !toWorkbenchTodo(todoTask)) {
       error(res, "Todo not found", 404);
       return;
     }
-    const body = await readJsonBody<{ isCompleted?: boolean }>(req, res);
-    if (!body) return;
-    const isCompleted = body.isCompleted === true;
     const metadata = readTaskMetadata(todoTask);
     const todoMeta =
       asObject(metadata.workbenchTodo) ?? asObject(metadata.todo) ?? {};
@@ -10058,19 +10224,48 @@ async function handleRequest(
     }
     const decodedTodoId = decodePathComponent(todoItemMatch[1], res, "todo id");
     if (!decodedTodoId) return;
-    const todoTask = await state.runtime.getTask(decodedTodoId as UUID);
-    const todoView = todoTask ? toWorkbenchTodo(todoTask) : null;
-    if (!todoTask || !todoTask.id || !todoView) {
-      error(res, "Todo not found", 404);
-      return;
+    const todoData = await getTodoDataService(state.runtime);
+
+    if (method === "GET" && todoData) {
+      try {
+        const dbTodo = await todoData.getTodo(decodedTodoId);
+        const mapped = dbTodo ? toWorkbenchTodoFromRecord(dbTodo) : null;
+        if (mapped) {
+          json(res, { todo: mapped });
+          return;
+        }
+      } catch {
+        // fallback to task-backed path
+      }
     }
 
     if (method === "GET") {
+      const todoTask = await state.runtime.getTask(decodedTodoId as UUID);
+      const todoView = todoTask ? toWorkbenchTodo(todoTask) : null;
+      if (!todoTask || !todoTask.id || !todoView) {
+        error(res, "Todo not found", 404);
+        return;
+      }
       json(res, { todo: todoView });
       return;
     }
 
+    if (method === "DELETE" && todoData) {
+      try {
+        await todoData.deleteTodo(decodedTodoId);
+        json(res, { ok: true });
+        return;
+      } catch {
+        // fallback to task-backed path
+      }
+    }
+
     if (method === "DELETE") {
+      const todoTask = await state.runtime.getTask(decodedTodoId as UUID);
+      if (!todoTask?.id || !toWorkbenchTodo(todoTask)) {
+        error(res, "Todo not found", 404);
+        return;
+      }
       await state.runtime.deleteTask(todoTask.id);
       json(res, { ok: true });
       return;
@@ -10086,6 +10281,54 @@ async function handleRequest(
       tags?: string[];
     }>(req, res);
     if (!body) return;
+
+    if (todoData) {
+      try {
+        const updates: Record<string, unknown> = {};
+        if (typeof body.name === "string") {
+          const name = body.name.trim();
+          if (!name) {
+            error(res, "name cannot be empty", 400);
+            return;
+          }
+          updates.name = name;
+        }
+        if (typeof body.description === "string") {
+          updates.description = body.description;
+        }
+        if (body.priority !== undefined) {
+          updates.priority = parseNullableNumber(body.priority);
+        }
+        if (typeof body.isUrgent === "boolean") {
+          updates.isUrgent = body.isUrgent;
+        }
+        if (typeof body.type === "string" && body.type.trim().length > 0) {
+          updates.type = body.type.trim();
+        }
+        if (typeof body.isCompleted === "boolean") {
+          updates.isCompleted = body.isCompleted;
+          updates.completedAt = body.isCompleted ? new Date() : null;
+        }
+        await todoData.updateTodo(decodedTodoId, updates);
+        const refreshedDbTodo = await todoData.getTodo(decodedTodoId);
+        const refreshedMapped = refreshedDbTodo
+          ? toWorkbenchTodoFromRecord(refreshedDbTodo)
+          : null;
+        if (refreshedMapped) {
+          json(res, { todo: refreshedMapped });
+          return;
+        }
+      } catch {
+        // fallback to task-backed path
+      }
+    }
+
+    const todoTask = await state.runtime.getTask(decodedTodoId as UUID);
+    const todoView = todoTask ? toWorkbenchTodo(todoTask) : null;
+    if (!todoTask || !todoTask.id || !todoView) {
+      error(res, "Todo not found", 404);
+      return;
+    }
 
     const update: Partial<Task> = {};
     if (typeof body.name === "string") {
