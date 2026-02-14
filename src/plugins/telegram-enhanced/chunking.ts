@@ -39,9 +39,13 @@ const markdownToTelegramChunks = (() => {
       return chunker;
     }
   } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error?.message ?? error?.toString?.() ?? error);
     logger.warn(
       `[milaidy] Telegram plugin load failed: ${
-        error instanceof Error ? error.message : String(error)
+        errorMessage
       }; using fallback chunker`,
     );
     return fallbackMarkdownChunker;
