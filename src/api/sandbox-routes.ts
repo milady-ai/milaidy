@@ -512,7 +512,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 function resolveSigningRequestPayload(
-  input: unknown
+  input: unknown,
 ): { request: SigningRequest } | { error: string } {
   const obj = asObject(input);
   if (!obj) {
