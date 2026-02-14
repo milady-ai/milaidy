@@ -1,5 +1,8 @@
 import { createRequire } from "node:module";
 
+const TELEGRAM_MESSAGE_LIMIT = 4096;
+const DEFAULT_HEADROOM = 120;
+
 type TelegramChunkCandidate = { html?: string; text?: string };
 type MarkdownChunker = (
   markdownText: string,
@@ -39,9 +42,6 @@ const markdownToTelegramChunks = (() => {
   }
   return fallbackMarkdownChunker;
 })();
-
-const TELEGRAM_MESSAGE_LIMIT = 4096;
-const DEFAULT_HEADROOM = 120;
 
 export type TelegramChunk = {
   html: string;

@@ -92,6 +92,11 @@ interface ResolvedPlugin {
   plugin: Plugin;
 }
 
+/**
+ * Temporary local compatibility shim while @elizaos/core temporarily
+ * drops `SandboxFetchAuditEvent`; remove/update once the upstream export
+ * is restored.
+ */
 type SandboxFetchAuditEvent = {
   direction: "inbound" | "outbound";
   url: string;
