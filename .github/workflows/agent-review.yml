@@ -67,13 +67,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read project scope
+        id: scope
+        run: |
+          if [ -f SCOPE.md ]; then
+            echo "scope<<SCOPE_EOF" >> $GITHUB_OUTPUT
+            cat SCOPE.md >> $GITHUB_OUTPUT
+            echo "SCOPE_EOF" >> $GITHUB_OUTPUT
+          fi
+
       - name: Agent Review
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-opus-4-6
           prompt: |
+            Reference the following project scope document when making review decisions:
+            ${{ steps.scope.outputs.scope }}
+
             You are the sole code reviewer for the Milaidy project. This is an agents-only codebase. No human contributions are accepted — humans contribute by using the app and reporting bugs as QA testers. Your review is final.
+
+            PRs are expected to follow the structured PR template with clear sections for what, why, how, and testing. Flag missing or weak sections.
 
             ## Classification
             This PR has been pre-classified as: ${{ needs.classify.outputs.category }}
@@ -146,6 +160,21 @@ jobs:
             6. **Decision:** APPROVE / REQUEST CHANGES / CLOSE (with reason)
 
             Be direct. Be opinionated. This repo's quality is your responsibility.
+
+  auto-merge:
+    name: Auto-merge approved PRs
+    needs: [classify, review-pr]
+    if: needs.review-pr.result == 'success' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable auto-merge
+        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
 
   triage-issue:
     if: github.event_name == 'issues'
