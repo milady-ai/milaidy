@@ -285,7 +285,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Enable auto-merge
+      - name: Merge approved PR
         run: |
           method="${MERGE_METHOD:-squash}"
           case "$method" in
@@ -296,8 +296,8 @@ jobs:
               ;;
           esac
 
-          echo "Enabling auto-merge using '$method' method"
-          gh pr merge ${{ github.event.pull_request.number }} --auto --"$method"
+          echo "Merging PR #${{ github.event.pull_request.number }} using '$method' method"
+          gh pr merge ${{ github.event.pull_request.number }} --"$method" --delete-branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
