@@ -67,13 +67,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Read project scope
         id: scope
         run: |
-          if [ -f SCOPE.md ]; then
+          base_sha="${{ github.event.pull_request.base.sha }}"
+
+          if git cat-file -e "${base_sha}:SCOPE.md"; then
+            echo "scope<<SCOPE_EOF" >> $GITHUB_OUTPUT
+            git show "$base_sha":SCOPE.md >> $GITHUB_OUTPUT
+            echo "SCOPE_EOF" >> $GITHUB_OUTPUT
+          elif [ -f SCOPE.md ]; then
             echo "scope<<SCOPE_EOF" >> $GITHUB_OUTPUT
             cat SCOPE.md >> $GITHUB_OUTPUT
             echo "SCOPE_EOF" >> $GITHUB_OUTPUT
@@ -99,7 +105,8 @@ jobs:
 
             PRs are expected to follow the structured PR template with clear sections for what, why, how, and testing. Flag missing or weak sections.
 
-            The PR branch is already checked out in the current working directory.
+            This environment is checked out at the PR base ref.
+            The PR patch is available via \'gh pr diff\'.
 
             ## Classification
             This PR has been pre-classified as: ${{ needs.classify.outputs.category }}
@@ -228,8 +235,8 @@ jobs:
                 per_page: 100,
               });
 
-              const botComments = comments.filter((c) => c.user?.type === 'Bot');
-              latest = findLatest(botComments) || findLatest(comments);
+              const botComments = comments.filter((c) => c.user?.type === "Bot");
+              latest = findLatest(botComments);
 
               if (latest) {
                 break;
@@ -296,10 +303,20 @@ jobs:
               ;;
           esac
 
+          pr_number="${{ github.event.pull_request.number }}"
+          echo "Waiting for required checks to pass for PR #${pr_number}"
+          if ! timeout 15m gh pr checks "$pr_number" \
+            --required \
+            --repo "$GH_REPO" \
+            --watch \
+            --interval 10 \
+            --fail-fast; then
+            echo "Required PR checks failed or are not passing. Aborting merge."
+            exit 1
+          fi
+
           echo "Merging PR #${{ github.event.pull_request.number }} using '$method' method"
-          gh pr merge ${{ github.event.pull_request.number }} --"$method" --delete-branch || \
-            gh pr merge ${{ github.event.pull_request.number }} --"$method" --admin || \
-            gh pr merge ${{ github.event.pull_request.number }} --"$method"
+          gh pr merge "$pr_number" --"$method" --delete-branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
