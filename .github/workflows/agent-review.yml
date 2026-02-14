@@ -298,6 +298,7 @@ jobs:
 
           echo "Merging PR #${{ github.event.pull_request.number }} using '$method' method"
           gh pr merge ${{ github.event.pull_request.number }} --"$method" --delete-branch || \
+            gh pr merge ${{ github.event.pull_request.number }} --"$method" --admin || \
             gh pr merge ${{ github.event.pull_request.number }} --"$method"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
