@@ -1,7 +1,7 @@
 name: Agent Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
   issues:
     types: [opened]
@@ -53,7 +53,7 @@ jobs:
             console.log(`Classified as: ${category}`);
 
   review-pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
     needs: classify
     runs-on: ubuntu-latest
     permissions:
@@ -65,6 +65,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Read project scope
@@ -164,7 +165,7 @@ jobs:
   auto-merge:
     name: Auto-merge approved PRs
     needs: [classify, review-pr]
-    if: needs.review-pr.result == 'success' && github.event_name == 'pull_request'
+    if: needs.review-pr.result == 'success' && github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       contents: write
