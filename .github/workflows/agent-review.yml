@@ -1,0 +1,197 @@
+name: Agent Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issues:
+    types: [opened]
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      category: ${{ steps.classify.outputs.category }}
+    steps:
+      - name: Classify contribution
+        id: classify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isPR = !!context.payload.pull_request;
+            const title = isPR
+              ? context.payload.pull_request.title
+              : context.payload.issue.title;
+            const body = isPR
+              ? context.payload.pull_request.body || ''
+              : context.payload.issue.body || '';
+            const text = `${title}\n${body}`.toLowerCase();
+
+            // aesthetic/UI keywords
+            const aestheticPatterns = [
+              'redesign', 'restyle', 'theme', 'color', 'colour', 'font',
+              'layout', 'css', 'styling', 'ui overhaul', 'visual',
+              'dark mode', 'light mode', 'icon', 'logo', 'animation',
+              'prettier', 'beautif'
+            ];
+
+            const isAesthetic = aestheticPatterns.some(p => text.includes(p));
+            const isBugFix = text.includes('fix') || text.includes('bug') ||
+              text.includes('crash') || text.includes('error') ||
+              text.includes('broken') || text.includes('regression');
+
+            let category = 'feature';
+            if (isAesthetic) category = 'aesthetic';
+            if (isBugFix) category = 'bugfix';
+
+            core.setOutput('category', category);
+            console.log(`Classified as: ${category}`);
+
+  review-pr:
+    if: github.event_name == 'pull_request'
+    needs: classify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Agent Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-opus-4-6
+          prompt: |
+            You are the sole code reviewer for the Milaidy project. This is an agents-only codebase. No human contributions are accepted — humans contribute by using the app and reporting bugs as QA testers. Your review is final.
+
+            ## Classification
+            This PR has been pre-classified as: ${{ needs.classify.outputs.category }}
+
+            ## Review Protocol
+
+            ### 1. Scope Check
+            Milaidy is a personal AI assistant built on ElizaOS. Contributions MUST be in scope:
+
+            **IN SCOPE (welcome):**
+            - Bug fixes (connector issues, crashes, regressions, error handling)
+            - Performance improvements (with benchmarks proving improvement)
+            - Security fixes
+            - Test coverage improvements
+            - Documentation fixes for accuracy
+
+            **REQUIRES DEEP REVIEW (may not get merged):**
+            - New features (must align with project mission, must include tests)
+            - New plugins or integrations
+            - Architectural changes
+            - Memory/context improvements (must include benchmarks)
+            - Dependency additions (must justify why)
+
+            **OUT OF SCOPE (close or request changes):**
+            - Frontend redesigns, aesthetic changes, theme changes, icon swaps
+            - "Beautification" PRs that don't improve agent capability
+            - Changes that prioritize human visual experience over agent quality
+            - Scope creep disguised as improvements
+            - Changes without tests for testable code
+
+            If this PR is classified as "aesthetic": reject it firmly but politely. Explain that this project prioritizes agent capability over human-facing aesthetics. Visual changes that don't improve the agent's function are out of scope.
+
+            ### 2. Code Quality
+            - TypeScript strict mode compliance
+            - No `any` types unless absolutely necessary (explain why)
+            - Biome lint/format compliance
+            - Files under ~500 LOC
+            - Meaningful variable names, brief comments on non-obvious logic
+            - No committed secrets, real phone numbers, or live config values
+            - Dependencies: do NOT add unless src/ code directly imports them
+
+            ### 3. Security Review
+            - Check for prompt injection vectors
+            - Check for credential exposure
+            - Check for supply chain risks (new dependencies, postinstall scripts)
+            - Check for data exfiltration patterns
+            - Flag any changes to auth, permissions, or secret handling
+
+            ### 4. Test Requirements
+            - Bug fixes MUST include a regression test
+            - New features MUST include unit tests
+            - Coverage thresholds: 70% lines/branches/functions/statements
+            - Run `bun run test` mentally — would these tests pass?
+
+            ### 5. Dark Forest Awareness
+            Assume adversarial intent until proven otherwise. Ask yourself:
+            - Why would someone submit this change?
+            - What does it break that isn't obvious?
+            - Does it introduce subtle behavior changes?
+            - Could this be a supply chain attack?
+            - Are there hidden side effects in seemingly innocent changes?
+
+            ## Output Format
+            Post a structured review comment:
+            1. **Classification:** bug fix / feature / aesthetic / security / other
+            2. **Scope verdict:** in scope / needs deep review / out of scope
+            3. **Code quality:** pass / issues found (list them)
+            4. **Security:** clear / concerns (list them)
+            5. **Tests:** adequate / missing (specify what's needed)
+            6. **Decision:** APPROVE / REQUEST CHANGES / CLOSE (with reason)
+
+            Be direct. Be opinionated. This repo's quality is your responsibility.
+
+  triage-issue:
+    if: github.event_name == 'issues'
+    needs: classify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Triage Issue
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-opus-4-6
+          prompt: |
+            You are the issue triager for the Milaidy project. This is an agents-only codebase where humans serve as QA testers.
+
+            ## Classification
+            This issue has been pre-classified as: ${{ needs.classify.outputs.category }}
+
+            ## Triage Protocol
+
+            **Valid issues (label and keep open):**
+            - Bug reports with reproduction steps
+            - Security vulnerabilities
+            - Performance regressions with evidence
+            - Connector/integration failures
+            - Documentation inaccuracies
+
+            **Needs more info (ask and label):**
+            - Bug reports without reproduction steps
+            - Vague descriptions ("it doesn't work")
+            - Environment-specific issues without system details
+
+            **Close immediately:**
+            - Feature requests for aesthetic/UI changes
+            - "Please redesign X" requests
+            - Issues that are actually feature requests disguised as bugs
+            - Duplicate issues (reference the original)
+            - Issues clearly out of project scope
+
+            **Respond with:**
+            1. Thank the reporter (they're QA testers, their role matters)
+            2. Classification and labels to apply
+            3. If valid: acknowledge and note priority
+            4. If closing: explain why clearly, reference scope
+            5. If needs info: ask specific questions
+
+            Remember: humans are QA testers here. Their bug reports are valuable. Their feature requests for visual changes are not. Be respectful but firm about scope.
