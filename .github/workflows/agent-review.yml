@@ -10,7 +10,6 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  id-token: write
 
 jobs:
   classify:
@@ -60,7 +59,6 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -81,6 +79,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: '--model claude-opus-4-6'
           prompt: |
             Reference the following project scope document when making review decisions:
@@ -184,7 +183,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -195,6 +193,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: '--model claude-opus-4-6'
           prompt: |
             You are the issue triager for the Milaidy project. This is an agents-only codebase where humans serve as QA testers.
