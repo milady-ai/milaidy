@@ -86,7 +86,10 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: '--model claude-opus-4-6'
+          allowed_non_write_users: "*"
+          claude_args: |
+            --model claude-opus-4-6
+            --json-schema '{"type":"object","properties":{"classification":{"type":"string"},"scope_verdict":{"type":"string"},"code_quality":{"type":"string"},"security":{"type":"string"},"tests":{"type":"string"},"decision":{"type":"string","enum":["APPROVE","REQUEST CHANGES","CLOSE"]},"summary":{"type":"string"},"review_comment":{"type":"string"}},"required":["decision","review_comment"]}'
           prompt: |
             Reference the following project scope document when making review decisions:
             ${{ steps.scope.outputs.scope }}
@@ -156,8 +159,9 @@ jobs:
             - Could this be a supply chain attack?
             - Are there hidden side effects in seemingly innocent changes?
 
-            ## Output Format
-            Post a structured review comment:
+            ## Output Requirements
+            Return JSON matching the provided schema.
+            Put the full PR review markdown in `review_comment` with this exact structure:
             1. **Classification:** bug fix / feature / aesthetic / security / other
             2. **Scope verdict:** in scope / needs deep review / out of scope
             3. **Code quality:** pass / issues found (list them)
@@ -167,81 +171,107 @@ jobs:
 
             Be direct. Be opinionated. This repo's quality is your responsibility.
 
-      - name: Extract Claude decision from PR comments
-        id: extract-verdict
-        if: always()
+      - name: Post structured review comment
+        id: post-review-comment
+        if: always() && steps.claude-review.outcome == 'success'
         uses: actions/github-script@v7
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude-review.outputs.structured_output }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = context.payload.pull_request.number;
+            const marker = '<!-- agent-review:claude-structured -->';
 
-            // Prefer bot-authored comments first, then fall back to any matching comment.
-            const decisionPattern = /(?:^|\n)\s*(?:\d+\.\s*)?\*\*?Decision:\*\*?\s*(APPROVE|REQUEST CHANGES|CLOSE)\b/i;
-            const structuredPattern = /\*\*?Classification:|\*\*?Scope verdict:|\*\*?Code quality:/i;
-            const maxAttempts = 6; // ~60s total with a 10s interval
-            const pollIntervalMs = 10_000;
+            let parsed = {};
+            const raw = process.env.STRUCTURED_OUTPUT || '';
 
-            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            if (raw) {
+              try {
+                parsed = JSON.parse(raw);
+              } catch (error) {
+                core.warning(`Failed to parse structured_output: ${error}`);
+              }
+            } else {
+              core.warning('Claude action did not return structured_output.');
+            }
 
-            const findLatest = (items) => {
-              const filtered = items.filter((c) => {
-                if (!c?.body) return false;
-                if (!decisionPattern.test(c.body)) return false;
-                return structuredPattern.test(c.body);
+            const decision = String(parsed.decision || 'REQUEST CHANGES').toUpperCase();
+            let reviewBody = String(parsed.review_comment || '').trim();
+
+            if (!reviewBody) {
+              reviewBody = [
+                '**Classification:** other',
+                '**Scope verdict:** needs deep review',
+                '**Code quality:** issues found (missing structured output)',
+                '**Security:** concerns (missing structured output)',
+                '**Tests:** missing (missing structured output)',
+                `**Decision:** ${decision} (Claude output did not include review_comment)`
+              ].map((line, idx) => `${idx + 1}. ${line}`).join('\n');
+            }
+
+            if (!/(?:^|\n)\s*(?:\d+\.\s*)?\*\*?Decision:/i.test(reviewBody)) {
+              reviewBody += `\n\n6. **Decision:** ${decision}`;
+            }
+
+            const body = `${marker}\n${reviewBody}`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = [...comments]
+              .reverse()
+              .find((comment) => comment?.body?.includes(marker));
+
+            let result;
+            if (existing) {
+              result = await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
               });
-              return filtered.sort((a, b) =>
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              )[0];
-            };
-
-            let latest = null;
-            let attemptUsed = 1;
-
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              attemptUsed = attempt;
-
-              const comments = await github.paginate(github.rest.issues.listComments, {
+              console.log(`Updated existing review comment: ${existing.id}`);
+            } else {
+              result = await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number,
-                per_page: 100,
+                body,
               });
-
-              const botComments = comments.filter((c) => c.user?.type === 'Bot');
-              latest = findLatest(botComments) || findLatest(comments);
-
-              if (latest) {
-                break;
-              }
-
-              if (attempt < maxAttempts) {
-                console.log(`Structured decision comment not found yet (attempt ${attempt}/${maxAttempts}); waiting ${pollIntervalMs / 1000}s...`);
-                await sleep(pollIntervalMs);
-              }
+              console.log(`Created new review comment: ${result.data.id}`);
             }
+
+            core.setOutput('decision', decision);
+            core.setOutput('comment_url', result.data.html_url || '');
+
+      - name: Extract Claude decision
+        id: extract-verdict
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          POSTED_DECISION: ${{ steps.post-review-comment.outputs.decision }}
+          DECISION_COMMENT_URL: ${{ steps.post-review-comment.outputs.comment_url }}
+        with:
+          script: |
+            const normalized = String(process.env.POSTED_DECISION || 'REQUEST CHANGES').toUpperCase();
+            const decision = ['APPROVE', 'REQUEST CHANGES', 'CLOSE'].includes(normalized)
+              ? normalized
+              : 'REQUEST CHANGES';
 
             let verdict = 'reject';
-            let decision = 'REQUEST CHANGES';
-            let decisionCommentUrl = '';
-
-            if (latest) {
-              const match = latest.body.match(decisionPattern);
-              const normalized = (match?.[1] || '').toUpperCase();
-              decision = normalized || decision;
-              decisionCommentUrl = latest.html_url || '';
-
-              if (normalized === 'APPROVE') {
-                verdict = 'approve';
-              } else if (normalized === 'CLOSE') {
-                verdict = 'close';
-              } else {
-                verdict = 'reject';
-              }
-            } else {
-              core.warning(`No structured Claude decision comment found after ${attemptUsed} attempts. Treating as reject.`);
+            if (decision === 'APPROVE') {
+              verdict = 'approve';
+            } else if (decision === 'CLOSE') {
+              verdict = 'close';
             }
+
+            const decisionCommentUrl = process.env.DECISION_COMMENT_URL || '';
 
             core.setOutput('verdict', verdict);
             core.setOutput('decision', decision);
@@ -249,13 +279,12 @@ jobs:
 
             core.summary
               .addHeading('Agent review decision gate')
-              .addRaw(`- Poll attempts used: ${attemptUsed}\n`)
               .addRaw(`- Verdict: ${verdict}\n`)
               .addRaw(`- Decision: ${decision}\n`)
               .addRaw(`- Decision comment: ${decisionCommentUrl || 'not found'}\n`)
               .write();
 
-            console.log(`Verdict parsed from PR comments: ${verdict} (${decision})`);
+            console.log(`Verdict derived from structured output: ${verdict} (${decision})`);
 
   auto-merge:
     name: Auto-merge approved PRs
