@@ -73,7 +73,13 @@ jobs:
       - name: Read project scope
         id: scope
         run: |
-          if [ -f SCOPE.md ]; then
+          base_sha="${{ github.event.pull_request.base.sha }}"
+
+          if git cat-file -e "${base_sha}:SCOPE.md"; then
+            echo "scope<<SCOPE_EOF" >> $GITHUB_OUTPUT
+            git show "$base_sha":SCOPE.md >> $GITHUB_OUTPUT
+            echo "SCOPE_EOF" >> $GITHUB_OUTPUT
+          elif [ -f SCOPE.md ]; then
             echo "scope<<SCOPE_EOF" >> $GITHUB_OUTPUT
             cat SCOPE.md >> $GITHUB_OUTPUT
             echo "SCOPE_EOF" >> $GITHUB_OUTPUT
@@ -228,8 +234,8 @@ jobs:
                 per_page: 100,
               });
 
-              const botComments = comments.filter((c) => c.user?.type === 'Bot');
-              latest = findLatest(botComments) || findLatest(comments);
+              const botComments = comments.filter((c) => c.user?.type === "Bot");
+              latest = findLatest(botComments);
 
               if (latest) {
                 break;
